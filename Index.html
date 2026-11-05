@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body{
+      background-color:#10182b;
+      color:#f5f5f5;
+    }
+
+    h1{
+      color:#6c9eff;
+      font-size:40px;
+    }
+    #card{
+      background-color:#202b42;
+      padding:24px;
+      border-radius:16px;
+      max-width:500px;
+      margin:30px auto;
+    }
+
+    #question{
+      font-size:24px;
+    }
+
+    #answer{
+      font-size:18px;
+      color:#b8c7e0;
+      display:none;
+    }
+  </style>
+</head>
+<body>
+  <h1>Stay Curious!</h1>
+  <p>〜Quizletからの脱却〜</p>
+
+  <h2>単語カードで学習！</h2>
+
+  <h3>問題セットの設定</h3>
+
+  <label for="setNameInput">問題セット名:</label>
+  <input id="setNameInput" type="text" value="英語の構文150">
+
+  <br><br>
+
+  <label for="fieldsInput">情報項目(カンマ区切り):</label>
+  <input id="fieldsInput" type="text" value="ページ,大問">
+
+  <button onclick="applySetSettings()">設定を反映</button>
+
+  <h3>問題の登録</h3>
+
+  <label for="questionInput">問題:</label>
+  <input id="questionInput" type="text">
+
+  <br><br>
+
+  <label for="answerInput">答え:</label>
+  <input id="answerInput" type="text">
+
+  <br><br>
+
+  <div id="detailsInputs"></div>
+
+  <button id="registerButton" onclick="registerCard()">問題を登録</button>
+
+  <p id="learnedCount">覚えたカード:0/3枚</p>
+  <p id="importanceInfo"></p>
+  <p id="cardInfo"></p>
+
+  <div id="card">
+    <p id="question">問題はココ！</p>
+    <p id="answer">解答はココ！</p>
+  </div>
+  <button id="previousButton" onclick="previousCard()">前のカードへ！</button>
+  <button id="answerButton" onclick="toggleAnswer()">答えを表示！</button>
+  <button id="nextButton" onclick="nextCard()">次のカードへ！</button>
+  <button id="shuffleButton" onclick="shuffleCards()">問題をシャッフル</button>
+  <button id="learnedButton" onclick="markLearned()">覚えた！</button>
+  <script>
+    const studySet={
+      name:'英語の構文150',
+      fields:['ページ','大問']
+    }
+
+    const cards=[
+      {
+        id:1,
+        question:'saki',
+        answer:'miyoshi',
+        importance:'A',
+        details:{
+          ページ:'12',
+          大問:'2'
+        }
+      },
+      {
+        id:2,
+        question:'sakisaki',
+        answer:'yoshimi',
+        importance:'B',
+        details:{
+          ページ:'13',
+          大問:'1'
+        }
+      },
+      {
+        id:3,
+        question:'sakisakisaki',
+        answer:'miyosshy',
+        importance:'SS',
+        details:{
+          ページ:'14',
+          大問:'3'
+        }
+      }
+    ];
+    let currentIndex=0;
+    let learnedCards=[];
+
+    function renderDetailsInputs(){
+      const container=document.getElementById('detailsInputs');
+      container.innerHTML='';
+
+      studySet.fields.forEach(field => {
+        const label = document.createElement('label');
+        label.textContent=field + ':';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.id = 'detail_' + field;
+
+        container.appendChild(label);
+        container.appendChild(input);
+        container.appendChild(document.createElement('br'));
+        container.appendChild(document.createElement('br'));
+      })
+    }
+
+    function registerCard(){
+      const question = document.getElementById('questionInput').value.trim();
+      const answer = document.getElementById('answerInput').value.trim();
+
+      if(question === ''||answer === ''){
+        alert('問題と答えを入力してください。');
+        return;
+      }
+
+      const details={};
+      studySet.fields.forEach(field => {
+        const input=document.getElementById('detail_'+field);
+        details[field] = input.value.trim();
+      });
+
+      const newCard={
+        id:Math.max(0,...cards.map(card => card.id)) + 1,
+        question:question,
+        answer:answer,
+        importance:'A',
+        details:details
+      };
+
+      cards.push(newCard);
+
+      currentIndex=cards.length-1;
+      showCard();
+      updateLearnedCount();
+
+      document.getElementById('questionInput').value='';
+      document.getElementById('answerInput').value='';
+
+      studySet.fields.forEach(field => {
+        document.getElementById('detail_'+field).value='';
+      })
+
+      alert('登録完了！')
+    }
+
+    function applySetSettings(){
+      const nameInput = document.getElementById('setNameInput').value.trim();
+      const fieldsText = document.getElementById('fieldsInput').value;
+
+      if(nameInput === ''){
+        alert('問題セット名を入力してください。');
+        return;
+      }
+
+      studySet.name=nameInput;
+      studySet.fields=fieldsText
+        .split(',')
+        .map(field => field.trim())
+        .filter(field => field !== '')
+
+      showCard();
+      renderDetailsInputs();
+    }
+
+    function updateLearnedCount(){
+      document.getElementById('learnedCount').textContent='覚えたカード:' + learnedCards.length + '/' + cards.length + '枚';
+    }
+
+    function showCard(){
+      const currentCard=cards[currentIndex];
+      document.getElementById('question').textContent=currentCard.question;
+      document.getElementById('answer').textContent=currentCard.answer;
+      const info=studySet.fields
+        .filter(name => currentCard.details[name] !==undefined)
+        .map(name => name + ':' + currentCard.details[name])
+        .join('・');
+
+      document.getElementById('importanceInfo').textContent='重要度:'+currentCard.importance;
+      document.getElementById('cardInfo').textContent=info;
+      const learnedButton=document.getElementById('learnedButton');
+
+      if(learnedCards.includes(currentCard.id)){
+        learnedButton.textContent='✔覚えた！'
+      } else {
+        learnedButton.textContent='覚えた！'
+      }
+    }
+
+    showCard();
+    renderDetailsInputs();
+    updateLearnedCount();
+
+    function previousCard(){
+      currentIndex=(currentIndex - 1 + cards.length) % cards.length;
+      document.getElementById('answer').style.display='none';
+      document.getElementById('answerButton').textContent='答えを表示！'
+      document.getElementById('learnedButton').textContent='覚えた！'
+      showCard();
+    }
+
+    function nextCard(){
+      currentIndex=(currentIndex + 1) % cards.length;
+      document.getElementById('answer').style.display='none';
+      document.getElementById('answerButton').textContent='答えを表示！'
+      document.getElementById('learnedButton').textContent='覚えた！'
+      showCard();
+    }
+
+    function shuffleCards(){
+      cards.sort(()=>Math.random() - 0.5);
+      currentIndex = 0;
+      document.getElementById('answer').style.display='none'
+      document.getElementById('answerButton').textContent='答えを表示！'
+      showCard();
+    }
+
+    function toggleAnswer(){
+      const answer=document.getElementById('answer');
+      const button=document.getElementById('answerButton');
+
+      if(answer.style.display==='block'){
+        answer.style.display='none';
+        button.textContent='答えを表示！';
+      }else{
+        answer.style.display='block';
+        button.textContent='答えを隠す！';
+      }
+    }
+
+    function markLearned(){
+      if(!learnedCards.includes(cards[currentIndex].id)){
+        learnedCards.push(cards[currentIndex].id)
+      }
+
+      document.getElementById('learnedButton').textContent='✔覚えた！'
+      updateLearnedCount();
+    }
+  </script>
+</body>
+</html>
