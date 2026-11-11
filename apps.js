@@ -1,8 +1,8 @@
 // =============================================================
 // 1. Supabase 初期化
 // =============================================================
-const SUPABASE_URL = 'YOUR_SUPABASE_URL';       // ← Project URL
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; // ← anon key
+const SUPABASE_URL = 'YOUR_SUPABASE_URL';https:wiglfddygldrnebqfhpn.supabase.co       // ← Project URL
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; sb_publishable_cGuWmJFqG7OlKC7ZG5hz0w_wuYot0tY// ← anon key
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
