@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stay Curious!</title>
+  <!-- UI用 Tailwind CSS (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Supabase JS SDK (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+
+  <!-- ヘッダー -->
+  <header class="bg-indigo-600 text-white p-4 shadow-md flex justify-between items-center">
+    <h1 class="text-2xl font-bold flex items-center gap-2">
+      🦉 Stay Curious!
+    </h1>
+    <div id="user-status" class="hidden flex items-center gap-4">
+      <span id="user-email" class="text-sm bg-indigo-700 px-3 py-1 rounded-full"></span>
+      <button id="logout-btn" type="button" class="bg-rose-500 hover:bg-rose-600 px-3 py-1 rounded text-sm font-semibold transition">ログアウト</button>
+    </div>
+  </header>
+
+  <main class="max-w-4xl mx-auto p-4">
+
+    <!-- 1. 認証画面（未ログイン時） -->
+    <section id="auth-section" class="bg-white p-6 rounded-xl shadow-md max-w-md mx-auto mt-12">
+      <h2 class="text-xl font-bold mb-4 text-center">ログイン / 新規登録</h2>
+      <form id="auth-form" class="space-y-4" onsubmit="return false;">
+        <div>
+          <label for="auth-email" class="block text-sm font-medium mb-1">メールアドレス</label>
+          <input type="email" id="auth-email" autocomplete="email" class="w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="example@email.com">
+        </div>
+        <div>
+          <label for="auth-password" class="block text-sm font-medium mb-1">パスワード</label>
+          <input type="password" id="auth-password" autocomplete="current-password" class="w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="••••••••">
+        </div>
+        <div class="flex gap-2 pt-2">
+          <button id="login-btn" type="button" class="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded font-semibold transition">ログイン</button>
+          <button id="signup-btn" type="button" class="w-1/2 bg-slate-200 hover:bg-slate-300 text-slate-700 py-2 rounded font-semibold transition">新規登録</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- 2. ダッシュボード（ログイン後画面） -->
+    <section id="dashboard-section" class="hidden space-y-6">
+      <!-- 新規単語帳作成 -->
+      <div class="bg-white p-6 rounded-xl shadow-md">
+        <h2 class="text-xl font-bold mb-4">新しい単語帳を作成</h2>
+        <form id="create-deck-form" class="grid grid-cols-1 md:grid-cols-3 gap-4" onsubmit="return false;">
+          <input type="text" id="deck-title" class="border rounded p-2" placeholder="単語帳タイトル (例: ターゲット1900)">
+          <input type="text" id="textbook-name" class="border rounded p-2" placeholder="教科書名 (任意)">
+          <button id="create-deck-btn" type="button" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded transition">作成する</button>
+        </form>
+      </div>
+
+      <!-- 単語帳一覧 -->
+      <div>
+        <h2 class="text-xl font-bold mb-4">マイ単語帳一覧</h2>
+        <div id="decks-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- JSから動的に挿入 -->
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- スクリプト参照 -->
+  <script src="app.js" defer></script>
+</body>
+</html>
