@@ -28,7 +28,7 @@ const decksList = document.getElementById('decks-list');
 // =============================================================
 // 3. 認証状態の監視 & ログイン処理
 // =============================================================
-supabase.auth.onAuthStateChange((event, session) => {
+supabaseClient.auth.onAuthStateChange((event, session) => {
   if (session) {
     authSection.classList.add('hidden');
     dashboardSection.classList.remove('hidden');
@@ -44,7 +44,7 @@ supabase.auth.onAuthStateChange((event, session) => {
 
 // 新規登録
 signupBtn.addEventListener('click', async () => {
-  const { error } = await supabase.auth.signUp({
+  const { error } = await supabaseClient.auth.signUp({
     email: authEmail.value,
     password: authPassword.value,
   });
@@ -54,7 +54,7 @@ signupBtn.addEventListener('click', async () => {
 
 // ログイン
 loginBtn.addEventListener('click', async () => {
-  const { error } = await supabase.auth.signInWithPassword({
+  const { error } = await supabaseClient.auth.signInWithPassword({
     email: authEmail.value,
     password: authPassword.value,
   });
@@ -63,7 +63,7 @@ loginBtn.addEventListener('click', async () => {
 
 // ログアウト
 logoutBtn.addEventListener('click', async () => {
-  await supabase.auth.signOut();
+  await supabaseClient.auth.signOut();
 });
 
 // =============================================================
@@ -74,7 +74,7 @@ logoutBtn.addEventListener('click', async () => {
 async function loadDecks() {
   decksList.innerHTML = '<p class="text-gray-500">読み込み中...</p>';
   
-  const { data: decks, error } = await supabase
+  const { data: decks, error } = await supabaseClient
     .from('decks')
     .select('*')
     .order('created_at', { ascending: false });
@@ -108,10 +108,10 @@ createDeckBtn.addEventListener('click', async () => {
 
   if (!title) return alert('タイトルを入力してください');
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await supabaseClient.auth.getUser();
   if (!user) return alert('ログインが必要です');
 
-  const { error } = await supabase.from('decks').insert([
+  const { error } = await supabaseClient.from('decks').insert([
     {
       user_id: user.id,
       title: title,
@@ -134,7 +134,7 @@ createDeckBtn.addEventListener('click', async () => {
 window.deleteDeck = async function(deckId) {
   if (!confirm('この単語帳を削除しますか？')) return;
 
-  const { error } = await supabase.from('decks').delete().eq('id', deckId);
+  const { error } = await supabaseClient.from('decks').delete().eq('id', deckId);
   if (error) {
     alert(`削除エラー: ${error.message}`);
   } else {
