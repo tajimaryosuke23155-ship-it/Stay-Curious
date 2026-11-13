@@ -13,7 +13,7 @@
 
   <!-- ヘッダー -->
   <header class="bg-indigo-600 text-white p-4 shadow-md flex justify-between items-center">
-    <h1 class="text-2xl font-bold flex items-center gap-2">
+    <h1 id="home-logo" class="text-2xl font-bold flex items-center gap-2 cursor-pointer hover:opacity-90 transition">
       🦉 Stay Curious!
     </h1>
     <div id="user-status" class="hidden flex items-center gap-4">
@@ -61,6 +61,79 @@
         <div id="decks-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <!-- JSから動的に挿入 -->
         </div>
+      </div>
+    </section>
+
+    <!-- 3. 単語帳詳細 & カード作成・一覧画面 -->
+    <section id="deck-detail-section" class="hidden space-y-6">
+      <div class="flex flex-wrap justify-between items-center gap-4 bg-white p-5 rounded-xl shadow-md">
+        <div>
+          <button id="back-to-dashboard-btn" type="button" class="text-sm text-indigo-600 hover:underline font-medium mb-1">← 単語帳一覧に戻る</button>
+          <h2 id="detail-deck-title" class="text-2xl font-bold text-slate-800"></h2>
+          <p id="detail-deck-textbook" class="text-xs text-indigo-600 font-semibold mt-1"></p>
+        </div>
+        <button id="start-study-btn" type="button" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-bold shadow transition">
+          ▶ 学習スタート
+        </button>
+      </div>
+
+      <!-- カード新規作成フォーム -->
+      <div class="bg-white p-6 rounded-xl shadow-md space-y-4">
+        <h3 class="text-lg font-bold text-slate-800">問題カードを追加</h3>
+
+        <!-- 4種類のカード形式選択 -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <button type="button" data-card-type="basic" class="card-type-tab bg-indigo-600 text-white py-2 px-3 rounded-lg text-sm font-semibold transition">一問一答</button>
+          <button type="button" data-card-type="order" class="card-type-tab bg-slate-100 text-slate-700 hover:bg-slate-200 py-2 px-3 rounded-lg text-sm font-semibold transition">並べ替え</button>
+          <button type="button" data-card-type="multi_element" class="card-type-tab bg-slate-100 text-slate-700 hover:bg-slate-200 py-2 px-3 rounded-lg text-sm font-semibold transition">複数要素（完答）</button>
+          <button type="button" data-card-type="cloze" class="card-type-tab bg-slate-100 text-slate-700 hover:bg-slate-200 py-2 px-3 rounded-lg text-sm font-semibold transition">穴埋め</button>
+        </div>
+
+        <!-- 動的フォームエリア -->
+        <form id="create-card-form" class="space-y-4" onsubmit="return false;">
+          <div id="dynamic-card-fields" class="space-y-3">
+            <!-- JSでカードタイプに応じた入力欄を描画 -->
+          </div>
+
+          <!-- メタ情報（ページ・問題番号） -->
+          <div class="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">ページ番号 (任意)</label>
+              <input type="number" id="card-page-number" min="0" class="w-full border rounded p-2 text-sm" placeholder="例: 42">
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">問題番号 (任意)</label>
+              <input type="text" id="card-question-number" class="w-full border rounded p-2 text-sm" placeholder="例: 問3-(2)">
+            </div>
+          </div>
+
+          <button id="create-card-btn" type="button" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-lg transition">
+            このカードを追加する
+          </button>
+        </form>
+      </div>
+
+      <!-- 登録済みカード一覧 -->
+      <div>
+        <h3 class="text-lg font-bold mb-3">登録済みカード (<span id="cards-count">0</span>枚)</h3>
+        <div id="cards-list" class="space-y-3">
+          <!-- JSから動的に挿入 -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. 学習（クイズ）画面 -->
+    <section id="study-section" class="hidden space-y-6">
+      <div class="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm">
+        <button id="exit-study-btn" type="button" class="text-sm text-slate-600 hover:text-slate-900 font-medium">✕ 学習を終了する</button>
+        <div class="text-sm font-bold text-indigo-600">
+          問題 <span id="study-progress">1 / 1</span>
+        </div>
+      </div>
+
+      <!-- 問題カード本体 -->
+      <div id="study-card-container" class="bg-white p-6 md:p-8 rounded-2xl shadow-md min-h-[280px] flex flex-col justify-between">
+        <!-- JSでカード種類ごとの出題UIを描画 -->
       </div>
     </section>
 
