@@ -3,6 +3,7 @@ export const state = {
   currentDisplayName: '',
   currentDeck: null,
   currentClass: null,
+  currentFolder: null,
   isDeckOwner: false,
   isCurrentDeckSaved: false,
   currentCards: [],
