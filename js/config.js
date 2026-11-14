@@ -6,10 +6,10 @@ export const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABAS
 export function escapeHtml(str) {
   if (typeof str !== 'string') return '';
   return str.replace(/[&<>"']/g, (m) => ({
-    '&': '&',
-    '<': '<',
-    '>': '>',
-    '"': '"',
-    "'": '''
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
   }[m]));
 }
