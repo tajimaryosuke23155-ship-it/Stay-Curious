@@ -70,6 +70,23 @@
         </div>
       </div>
 
+      <!-- フォルダ一覧（セットをまとめる） -->
+      <div class="space-y-4">
+        <div class="flex flex-wrap justify-between items-center gap-2">
+          <h2 class="text-xl font-bold">📁 フォルダ（セットのまとめ）</h2>
+        </div>
+
+        <form id="create-folder-form" class="bg-white p-4 rounded-xl shadow-sm border border-amber-100 grid grid-cols-1 md:grid-cols-3 gap-2.5" onsubmit="return false;">
+          <input type="text" id="new-folder-title" class="border rounded p-2 text-sm" placeholder="フォルダ名 (例: 2学期中間テスト範囲)">
+          <input type="text" id="new-folder-desc" class="border rounded p-2 text-sm" placeholder="メモ・説明 (任意)">
+          <button id="create-folder-btn" type="button" class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold py-2 px-4 rounded transition">＋ フォルダを作成</button>
+        </form>
+
+        <div id="folders-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- JSから動的に挿入 -->
+        </div>
+      </div>
+
       <!-- クラス（グループ）管理・一覧 -->
       <div class="space-y-4">
         <div class="flex flex-wrap justify-between items-center gap-2">
@@ -255,6 +272,12 @@
           </div>
         </div>
 
+        <!-- 自分のフォルダへのワンクリック追加（自分・他人のセット共通） -->
+        <div id="deck-folder-share-box" class="hidden bg-amber-50/70 p-3 rounded-xl border border-amber-200 flex flex-wrap items-center gap-2">
+          <span class="text-xs font-bold text-amber-900">📁 フォルダに追加:</span>
+          <div id="deck-folder-toggles" class="flex flex-wrap gap-1.5"></div>
+        </div>
+
         <!-- 学習成績サマリー -->
         <div class="grid grid-cols-3 gap-3 pt-3 border-t border-slate-100 text-center">
           <div class="bg-slate-50 p-2.5 rounded-lg">
@@ -416,6 +439,48 @@
       <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
         <h3 class="text-base font-bold mb-3">👥 メンバー (<span id="class-members-count">0</span>人)</h3>
         <div id="class-members-list" class="flex flex-wrap gap-2">
+          <!-- JSから動的に挿入 -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. フォルダ詳細画面 -->
+    <section id="folder-detail-section" class="hidden space-y-6">
+      <div class="bg-white p-6 rounded-xl shadow-md space-y-3">
+        <div class="flex flex-wrap justify-between items-start gap-4">
+          <div>
+            <button id="folder-back-btn" type="button" class="text-sm text-indigo-600 hover:underline font-medium mb-1">← ホームに戻る</button>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold px-2.5 py-0.5 rounded bg-amber-100 text-amber-800">📁 フォルダ</span>
+              <h2 id="folder-detail-title" class="text-2xl font-bold text-slate-800">フォルダ名</h2>
+            </div>
+            <p id="folder-detail-desc" class="text-sm text-slate-600 mt-1"></p>
+          </div>
+          <div class="flex gap-2">
+            <button id="edit-folder-btn" type="button" class="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-700 hover:text-indigo-700 font-bold px-3 py-2 rounded-lg transition">✎ 名前を編集</button>
+            <button id="delete-folder-btn" type="button" class="text-xs bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold px-3 py-2 rounded-lg transition">フォルダを削除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- フォルダにセットを追加するバー -->
+      <div class="bg-white p-5 rounded-xl shadow-sm border border-amber-100 space-y-3">
+        <h3 class="text-base font-bold text-slate-800">＋ 単語帳セットをこのフォルダに追加</h3>
+        <p class="text-xs text-slate-500">マイ単語帳や保存したライブラリのセットをまとめられます（元のライブラリ一覧にもそのまま残ります）。</p>
+        <div class="flex flex-wrap gap-2">
+          <select id="folder-add-deck-select" class="flex-1 min-w-[200px] border rounded-lg p-2 text-sm bg-white">
+            <option value="">フォルダに追加するセットを選択...</option>
+          </select>
+          <button id="folder-add-deck-btn" type="button" class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold px-5 py-2 rounded-lg transition">
+            フォルダに追加
+          </button>
+        </div>
+      </div>
+
+      <!-- フォルダ内の単語帳一覧 -->
+      <div>
+        <h3 class="text-lg font-bold mb-3">📚 フォルダ内のセット (<span id="folder-decks-count">0</span>セット)</h3>
+        <div id="folder-decks-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <!-- JSから動的に挿入 -->
         </div>
       </div>
