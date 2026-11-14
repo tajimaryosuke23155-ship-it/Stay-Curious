@@ -32,7 +32,7 @@
     <section id="auth-section" class="bg-white p-6 rounded-xl shadow-md max-w-md mx-auto mt-12">
       <h2 class="text-xl font-bold mb-4 text-center">ログイン / 新規登録</h2>
       <p id="share-login-notice" class="hidden text-xs bg-indigo-50 text-indigo-700 p-3 rounded-lg mb-4 text-center">
-        共有されたページを開くには、ログインまたは新規登録を行ってください。
+        共有リンク・クラス招待を開くには、ログインまたは新規登録を行ってください。
       </p>
       <form id="auth-form" class="space-y-4" onsubmit="return false;">
         <div>
@@ -66,6 +66,38 @@
       <div>
         <h2 class="text-xl font-bold mb-4">📚 マイ単語帳一覧</h2>
         <div id="decks-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- JSから動的に挿入 -->
+        </div>
+      </div>
+
+      <!-- クラス（グループ）管理・一覧 -->
+      <div class="space-y-4">
+        <div class="flex flex-wrap justify-between items-center gap-2">
+          <h2 class="text-xl font-bold">🏫 参加中のクラス（グループ）</h2>
+        </div>
+
+        <!-- クラス作成 & 招待コード参加ボックス -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <form id="create-class-form" class="bg-white p-4 rounded-xl shadow-sm border border-slate-100 space-y-2.5" onsubmit="return false;">
+            <h3 class="text-sm font-bold text-slate-700">＋ 新しいクラスを作成</h3>
+            <input type="text" id="new-class-name" class="w-full border rounded p-2 text-sm" placeholder="クラス名 (例: 2年A組 英語演習)">
+            <div class="flex gap-2">
+              <input type="text" id="new-class-desc" class="w-full border rounded p-2 text-sm" placeholder="説明・メモ (任意)">
+              <button id="create-class-btn" type="button" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold px-4 py-2 rounded shrink-0 transition">作成</button>
+            </div>
+          </form>
+
+          <form id="join-class-form" class="bg-white p-4 rounded-xl shadow-sm border border-slate-100 space-y-2.5" onsubmit="return false;">
+            <h3 class="text-sm font-bold text-slate-700">🔑 招待コードでクラスに参加</h3>
+            <p class="text-xs text-slate-500">招待リンクを開くか、8桁のコードを入力して参加できます。</p>
+            <div class="flex gap-2">
+              <input type="text" id="join-class-code-input" class="w-full border rounded p-2 text-sm uppercase font-mono" placeholder="例: A1B2C3D4">
+              <button id="join-class-btn" type="button" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-4 py-2 rounded shrink-0 transition">参加</button>
+            </div>
+          </form>
+        </div>
+
+        <div id="classes-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <!-- JSから動的に挿入 -->
         </div>
       </div>
@@ -120,20 +152,28 @@
         </div>
 
         <!-- 共有設定パネル（オーナーのみ表示） -->
-        <div id="share-settings-panel" class="hidden bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
-          <div class="flex items-center gap-2">
-            <label for="deck-visibility-select" class="text-xs font-bold text-slate-600">公開設定:</label>
-            <select id="deck-visibility-select" class="border rounded-lg px-2.5 py-1.5 text-xs bg-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500">
-              <option value="private">🔒 非公開（自分のみ）</option>
-              <option value="link">🔗 リンクを知っている人のみ</option>
-              <option value="public">🌐 全体公開（一覧に表示）</option>
-            </select>
+        <div id="share-settings-panel" class="hidden bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+              <label for="deck-visibility-select" class="text-xs font-bold text-slate-600">公開設定:</label>
+              <select id="deck-visibility-select" class="border rounded-lg px-2.5 py-1.5 text-xs bg-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="private">🔒 非公開（自分・共有クラスのみ）</option>
+                <option value="link">🔗 リンクを知っている人のみ</option>
+                <option value="public">🌐 全体公開（一覧に表示）</option>
+              </select>
+            </div>
+            <div id="share-link-box" class="hidden flex items-center gap-2">
+              <input type="text" id="share-url-input" readonly class="text-xs bg-white border rounded-lg px-2.5 py-1.5 w-48 md:w-64 text-slate-500">
+              <button id="copy-share-url-btn" type="button" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition">
+                🔗 URLをコピー
+              </button>
+            </div>
           </div>
-          <div id="share-link-box" class="hidden flex items-center gap-2">
-            <input type="text" id="share-url-input" readonly class="text-xs bg-white border rounded-lg px-2.5 py-1.5 w-48 md:w-64 text-slate-500">
-            <button id="copy-share-url-btn" type="button" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition">
-              🔗 URLをコピー
-            </button>
+
+          <!-- 所属クラスへのワンクリック共有 -->
+          <div id="deck-class-share-box" class="hidden pt-2.5 border-t border-slate-200 flex flex-wrap items-center gap-2">
+            <span class="text-xs font-bold text-slate-600">🏫 クラスに共有:</span>
+            <div id="deck-class-toggles" class="flex flex-wrap gap-1.5"></div>
           </div>
         </div>
 
@@ -236,6 +276,69 @@
         <h3 class="text-lg font-bold mb-3">作成した単語帳セット</h3>
         <div id="creator-decks-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <!-- JSから動的に挿入（公開は開ける・非公開はタイトルと枚数のみロック表示） -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. クラス詳細画面（メンバー・クラス内単語帳・招待リンク） -->
+    <section id="class-detail-section" class="hidden space-y-6">
+      <div class="bg-white p-6 rounded-xl shadow-md space-y-4">
+        <div class="flex flex-wrap justify-between items-start gap-4">
+          <div>
+            <button id="class-back-btn" type="button" class="text-sm text-indigo-600 hover:underline font-medium mb-1">← ホームに戻る</button>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold px-2.5 py-0.5 rounded bg-indigo-100 text-indigo-700">🏫 クラス</span>
+              <h2 id="class-detail-name" class="text-2xl font-bold text-slate-800">クラス名</h2>
+            </div>
+            <p id="class-detail-desc" class="text-sm text-slate-600 mt-1"></p>
+          </div>
+          <div id="class-owner-actions" class="flex gap-2">
+            <!-- オーナーなら削除、メンバーなら退会ボタンをJSで描画 -->
+          </div>
+        </div>
+
+        <!-- 招待リンク & 招待コード共有ボックス -->
+        <div class="bg-indigo-50/70 p-3.5 rounded-xl border border-indigo-100 flex flex-wrap items-center justify-between gap-3">
+          <div class="text-xs text-indigo-900">
+            <span class="font-bold">🔑 招待コード:</span>
+            <code id="class-invite-code" class="bg-white px-2 py-0.5 rounded border border-indigo-200 font-mono font-bold text-indigo-700 ml-1"></code>
+          </div>
+          <div class="flex items-center gap-2">
+            <input type="text" id="class-invite-url-input" readonly class="text-xs bg-white border border-indigo-200 rounded-lg px-2.5 py-1.5 w-48 md:w-64 text-slate-600">
+            <button id="copy-class-invite-btn" type="button" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition">
+              🔗 招待URLをコピー
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 自分の単語帳をこのクラスに追加 -->
+      <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-100 space-y-3">
+        <h3 class="text-base font-bold text-slate-800">＋ 自分の単語帳をこのクラスに共有する</h3>
+        <p class="text-xs text-slate-500">非公開設定のままの単語帳でも、クラスに追加するとメンバー全員が閲覧・学習できるようになります。</p>
+        <div class="flex flex-wrap gap-2">
+          <select id="class-add-deck-select" class="flex-1 min-w-[200px] border rounded-lg p-2 text-sm bg-white">
+            <option value="">追加するマイ単語帳を選択...</option>
+          </select>
+          <button id="class-add-deck-btn" type="button" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-5 py-2 rounded-lg transition">
+            クラスに追加
+          </button>
+        </div>
+      </div>
+
+      <!-- クラス共有単語帳一覧 -->
+      <div>
+        <h3 class="text-lg font-bold mb-3">📚 クラスの単語帳 (<span id="class-decks-count">0</span>セット)</h3>
+        <div id="class-decks-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- JSから動的に挿入 -->
+        </div>
+      </div>
+
+      <!-- クラスメンバー一覧 -->
+      <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
+        <h3 class="text-base font-bold mb-3">👥 メンバー (<span id="class-members-count">0</span>人)</h3>
+        <div id="class-members-list" class="flex flex-wrap gap-2">
+          <!-- JSから動的に挿入 -->
         </div>
       </div>
     </section>
