@@ -9,7 +9,9 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 // =============================================================
 // 2. アプリケーション状態（State）
 // =============================================================
+let currentUser = null;
 let currentDeck = null;
+let isDeckOwner = false;
 let currentCards = [];
 let weakCards = [];
 let selectedCardType = 'basic';
@@ -26,6 +28,7 @@ let currentOrderSelection = [];
 // 3. DOM要素の参照
 // =============================================================
 const authSection = document.getElementById('auth-section');
+const shareLoginNotice = document.getElementById('share-login-notice');
 const dashboardSection = document.getElementById('dashboard-section');
 const deckDetailSection = document.getElementById('deck-detail-section');
 const studySection = document.getElementById('study-section');
@@ -44,19 +47,28 @@ const deckTitle = document.getElementById('deck-title');
 const textbookName = document.getElementById('textbook-name');
 const createDeckBtn = document.getElementById('create-deck-btn');
 const decksList = document.getElementById('decks-list');
+const publicDecksList = document.getElementById('public-decks-list');
 
-// 詳細・カード作成画面
+// 詳細・カード作成・共有画面
 const backToDashboardBtn = document.getElementById('back-to-dashboard-btn');
 const detailDeckTitle = document.getElementById('detail-deck-title');
+const sharedDeckBadge = document.getElementById('shared-deck-badge');
 const detailDeckTextbook = document.getElementById('detail-deck-textbook');
 const startWeakStudyBtn = document.getElementById('start-weak-study-btn');
 const weakCardsCount = document.getElementById('weak-cards-count');
 const startStudyBtn = document.getElementById('start-study-btn');
 
+const shareSettingsPanel = document.getElementById('share-settings-panel');
+const deckVisibilitySelect = document.getElementById('deck-visibility-select');
+const shareLinkBox = document.getElementById('share-link-box');
+const shareUrlInput = document.getElementById('share-url-input');
+const copyShareUrlBtn = document.getElementById('copy-share-url-btn');
+
 const statTotalCards = document.getElementById('stat-total-cards');
 const statAccuracyRate = document.getElementById('stat-accuracy-rate');
 const statWeakCards = document.getElementById('stat-weak-cards');
 
+const createCardContainer = document.getElementById('create-card-container');
 const cardTypeTabs = document.querySelectorAll('.card-type-tab');
 const dynamicCardFields = document.getElementById('dynamic-card-fields');
 const cardPageNumber = document.getElementById('card-page-number');
@@ -72,8 +84,27 @@ const studyProgress = document.getElementById('study-progress');
 const studyCardContainer = document.getElementById('study-card-container');
 
 // =============================================================
-// 4. SPA 画面遷移ルーター
+// 4. URLルーティング（リロード維持 & ブラウザ戻る対応）
 // =============================================================
+function updateUrlParams(paramsObj, replace = false) {
+  const url = new URL(window.location.href);
+  url.searchParams.delete('deck');
+  url.searchParams.delete('share');
+  url.searchParams.delete('mode');
+
+  Object.entries(paramsObj).forEach(([k, v]) => {
+    if (v !== null && v !== undefined && v !== '') {
+      url.searchParams.set(k, v);
+    }
+  });
+
+  if (replace) {
+    window.history.replaceState({}, '', url);
+  } else {
+    window.history.pushState({}, '', url);
+  }
+}
+
 function showView(viewName) {
   authSection.classList.add('hidden');
   dashboardSection.classList.add('hidden');
@@ -84,31 +115,66 @@ function showView(viewName) {
   if (viewName === 'dashboard') {
     dashboardSection.classList.remove('hidden');
     loadDecks();
+    loadPublicDecks();
   }
   if (viewName === 'detail') deckDetailSection.classList.remove('hidden');
   if (viewName === 'study') studySection.classList.remove('hidden');
 }
 
-homeLogo.addEventListener('click', async () => {
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  if (session) showView('dashboard');
+// URLの状態から適切な画面を復元する
+async function routeFromCurrentUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const shareId = params.get('share');
+  const deckId = params.get('deck');
+  const mode = params.get('mode'); // 'study' or 'weak'
+
+  if (shareId) {
+    await window.openDeckByShareId(shareId, mode);
+  } else if (deckId) {
+    await window.openDeck(deckId, mode, true);
+  } else {
+    showView('dashboard');
+  }
+}
+
+// ブラウザの「戻る / 進む」ボタン対応
+window.addEventListener('popstate', async () => {
+  if (currentUser) {
+    await routeFromCurrentUrl();
+  }
+});
+
+homeLogo.addEventListener('click', () => {
+  if (!currentUser) return;
+  currentDeck = null;
+  updateUrlParams({});
+  showView('dashboard');
 });
 
 backToDashboardBtn.addEventListener('click', () => {
   currentDeck = null;
+  updateUrlParams({});
   showView('dashboard');
 });
 
 // =============================================================
 // 5. 認証状態の監視 & ログイン処理
 // =============================================================
-supabaseClient.auth.onAuthStateChange((event, session) => {
+supabaseClient.auth.onAuthStateChange(async (event, session) => {
   if (session) {
+    currentUser = session.user;
     userStatus.classList.remove('hidden');
     userEmail.textContent = session.user.email;
-    showView('dashboard');
+    await routeFromCurrentUrl();
   } else {
+    currentUser = null;
     userStatus.classList.add('hidden');
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('share')) {
+      shareLoginNotice.classList.remove('hidden');
+    } else {
+      shareLoginNotice.classList.add('hidden');
+    }
     showView('auth');
   }
 });
@@ -131,18 +197,21 @@ loginBtn.addEventListener('click', async () => {
 });
 
 logoutBtn.addEventListener('click', async () => {
+  updateUrlParams({}, true);
   await supabaseClient.auth.signOut();
 });
 
 // =============================================================
-// 6. 単語帳（decks）の操作
+// 6. 単語帳（decks）の操作（マイ単語帳 & 全体公開単語帳）
 // =============================================================
 async function loadDecks() {
+  if (!currentUser) return;
   decksList.innerHTML = '<p class="text-gray-500">読み込み中...</p>';
 
   const { data: decks, error } = await supabaseClient
     .from('decks')
     .select('*')
+    .eq('user_id', currentUser.id)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -155,14 +224,59 @@ async function loadDecks() {
     return;
   }
 
+  const visLabelMap = {
+    private: '🔒 非公開',
+    link: '🔗 リンク共有中',
+    public: '🌐 全体公開'
+  };
+
   decksList.innerHTML = decks.map(deck => `
     <div onclick="window.openDeck('${deck.id}')" class="bg-white p-5 rounded-xl shadow border border-slate-100 hover:border-indigo-300 hover:shadow-md cursor-pointer transition flex justify-between items-start">
       <div>
         <h3 class="text-lg font-bold text-slate-800">${escapeHtml(deck.title)}</h3>
         <p class="text-xs text-indigo-600 font-semibold mt-1">${deck.textbook_name ? escapeHtml(deck.textbook_name) : '教科書未指定'}</p>
-        <span class="inline-block mt-2 text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600">開いて学習・カード追加 →</span>
+        <div class="flex items-center gap-2 mt-2">
+          <span class="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600">${visLabelMap[deck.visibility] || '🔒 非公開'}</span>
+          <span class="text-xs text-indigo-500 font-medium">開く →</span>
+        </div>
       </div>
       <button onclick="event.stopPropagation(); window.deleteDeck('${deck.id}')" class="text-xs bg-rose-50 text-rose-600 hover:bg-rose-100 px-3 py-1.5 rounded font-medium transition">削除</button>
+    </div>
+  `).join('');
+}
+
+async function loadPublicDecks() {
+  if (!currentUser) return;
+  publicDecksList.innerHTML = '<p class="text-gray-500 text-sm">読み込み中...</p>';
+
+  const { data: decks, error } = await supabaseClient
+    .from('decks')
+    .select('*')
+    .eq('visibility', 'public')
+    .neq('user_id', currentUser.id)
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  if (error) {
+    publicDecksList.innerHTML = `<p class="text-rose-500 text-sm">取得エラー: ${escapeHtml(error.message)}</p>`;
+    return;
+  }
+
+  if (!decks || decks.length === 0) {
+    publicDecksList.innerHTML = '<p class="text-gray-500 text-sm">現在公開されている他のユーザーの単語帳はありません。</p>';
+    return;
+  }
+
+  publicDecksList.innerHTML = decks.map(deck => `
+    <div onclick="window.openDeck('${deck.id}')" class="bg-white p-5 rounded-xl shadow border border-slate-100 hover:border-indigo-300 hover:shadow-md cursor-pointer transition">
+      <div class="flex justify-between items-start">
+        <div>
+          <span class="text-xs font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">🌐 公開単語帳</span>
+          <h3 class="text-lg font-bold text-slate-800 mt-1">${escapeHtml(deck.title)}</h3>
+          <p class="text-xs text-indigo-600 font-semibold mt-1">${deck.textbook_name ? escapeHtml(deck.textbook_name) : '教科書未指定'}</p>
+        </div>
+        <span class="text-xs text-indigo-600 font-bold">学習する →</span>
+      </div>
     </div>
   `).join('');
 }
@@ -172,13 +286,11 @@ createDeckBtn.addEventListener('click', async () => {
   const textbook = textbookName.value.trim();
 
   if (!title) return alert('タイトルを入力してください');
-
-  const { data: { user } } = await supabaseClient.auth.getUser();
-  if (!user) return alert('ログインが必要です');
+  if (!currentUser) return alert('ログインが必要です');
 
   const { error } = await supabaseClient.from('decks').insert([
     {
-      user_id: user.id,
+      user_id: currentUser.id,
       title: title,
       textbook_name: textbook || null,
       visibility: 'private',
@@ -207,9 +319,50 @@ window.deleteDeck = async function(deckId) {
 };
 
 // =============================================================
-// 7. 単語帳詳細 & 4種類のカード作成・学習履歴集計
+// 7. 単語帳詳細 & 共有設定 & 4種類のカード管理
 // =============================================================
-window.openDeck = async function(deckId) {
+async function setupAndRenderDeck(deck, autoStudyMode = null, skipPushState = false) {
+  currentDeck = deck;
+  isDeckOwner = currentUser && deck.user_id === currentUser.id;
+
+  if (!skipPushState) {
+    const params = deck.share_id && !isDeckOwner
+      ? { share: deck.share_id }
+      : { deck: deck.id };
+    if (autoStudyMode) params.mode = autoStudyMode;
+    updateUrlParams(params);
+  }
+
+  detailDeckTitle.textContent = deck.title;
+  detailDeckTextbook.textContent = deck.textbook_name ? `教科書: ${deck.textbook_name}` : '教科書未指定';
+
+  // オーナーかゲストかでUIの編集権限を切り替え
+  if (isDeckOwner) {
+    sharedDeckBadge.classList.add('hidden');
+    shareSettingsPanel.classList.remove('hidden');
+    createCardContainer.classList.remove('hidden');
+    deckVisibilitySelect.value = deck.visibility || 'private';
+    updateShareLinkBox(deck);
+  } else {
+    sharedDeckBadge.classList.remove('hidden');
+    shareSettingsPanel.classList.add('hidden');
+    createCardContainer.classList.add('hidden');
+  }
+
+  renderCardFormFields(selectedCardType);
+  await loadCardsAndStats(deck.id);
+
+  // URLに ?mode=study や ?mode=weak が付いていた場合はそのまま学習画面へ遷移
+  if (autoStudyMode === 'study' && currentCards.length > 0) {
+    startQuizSession(currentCards, false, true);
+  } else if (autoStudyMode === 'weak' && weakCards.length > 0) {
+    startQuizSession(weakCards, true, true);
+  } else {
+    showView('detail');
+  }
+}
+
+window.openDeck = async function(deckId, autoStudyMode = null, skipPushState = false) {
   const { data: deck, error } = await supabaseClient
     .from('decks')
     .select('*')
@@ -217,18 +370,75 @@ window.openDeck = async function(deckId) {
     .single();
 
   if (error || !deck) {
-    alert('単語帳の読み込みに失敗しました');
+    alert('単語帳が見つからないか、アクセス権限がありません');
+    updateUrlParams({}, true);
+    showView('dashboard');
     return;
   }
 
-  currentDeck = deck;
-  detailDeckTitle.textContent = deck.title;
-  detailDeckTextbook.textContent = deck.textbook_name ? `教科書: ${deck.textbook_name}` : '教科書未指定';
-
-  renderCardFormFields(selectedCardType);
-  showView('detail');
-  await loadCardsAndStats(deck.id);
+  await setupAndRenderDeck(deck, autoStudyMode, skipPushState);
 };
+
+window.openDeckByShareId = async function(shareId, autoStudyMode = null) {
+  const { data: deck, error } = await supabaseClient
+    .from('decks')
+    .select('*')
+    .eq('share_id', shareId)
+    .single();
+
+  if (error || !deck) {
+    alert('共有リンクが無効か、非公開に設定されています');
+    updateUrlParams({}, true);
+    showView('dashboard');
+    return;
+  }
+
+  await setupAndRenderDeck(deck, autoStudyMode, true);
+};
+
+// 公開設定の変更と共有URL表示
+function updateShareLinkBox(deck) {
+  if (deck.visibility === 'link' || deck.visibility === 'public') {
+    shareLinkBox.classList.remove('hidden');
+    const shareUrl = new URL(window.location.href);
+    shareUrl.search = `?share=${deck.share_id}`;
+    shareUrlInput.value = shareUrl.toString();
+  } else {
+    shareLinkBox.classList.add('hidden');
+  }
+}
+
+deckVisibilitySelect.addEventListener('change', async () => {
+  if (!currentDeck || !isDeckOwner) return;
+  const newVisibility = deckVisibilitySelect.value;
+
+  const { data, error } = await supabaseClient
+    .from('decks')
+    .update({ visibility: newVisibility })
+    .eq('id', currentDeck.id)
+    .select()
+    .single();
+
+  if (error) {
+    alert(`公開設定の更新に失敗しました: ${error.message}`);
+  } else if (data) {
+    currentDeck = data;
+    updateShareLinkBox(data);
+  }
+});
+
+copyShareUrlBtn.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(shareUrlInput.value);
+    const originalText = copyShareUrlBtn.textContent;
+    copyShareUrlBtn.textContent = '✓ コピー完了！';
+    setTimeout(() => { copyShareUrlBtn.textContent = originalText; }, 2000);
+  } catch {
+    shareUrlInput.select();
+    document.execCommand('copy');
+    alert('共有URLをコピーしました！');
+  }
+});
 
 // タブ切り替えで入力フォームを動的生成
 cardTypeTabs.forEach(tab => {
@@ -290,7 +500,7 @@ function renderCardFormFields(type) {
 
 // カード追加処理
 createCardBtn.addEventListener('click', async () => {
-  if (!currentDeck) return;
+  if (!currentDeck || !isDeckOwner) return;
 
   let content = null;
 
@@ -367,11 +577,10 @@ async function loadCardsAndStats(deckId) {
   if (currentCards.length === 0) {
     weakCards = [];
     updateStatsUI(0, 0, 0);
-    cardsList.innerHTML = '<p class="text-slate-500 text-sm bg-white p-4 rounded-xl">まだカードがありません。上のフォームから追加しましょう！</p>';
+    cardsList.innerHTML = '<p class="text-slate-500 text-sm bg-white p-4 rounded-xl">まだカードがありません。</p>';
     return;
   }
 
-  // この単語帳に含まれるカードの学習ログを取得（新しい順）
   const cardIds = currentCards.map(c => c.id);
   const { data: logs } = await supabaseClient
     .from('learning_logs')
@@ -379,7 +588,6 @@ async function loadCardsAndStats(deckId) {
     .in('card_id', cardIds)
     .order('reviewed_at', { ascending: false });
 
-  // カードIDごとに統計を集計
   const statsByCard = {};
   let totalAttempts = 0;
   let totalCorrect = 0;
@@ -392,17 +600,16 @@ async function loadCardsAndStats(deckId) {
       statsByCard[log.card_id] = {
         attempts: 0,
         correct: 0,
-        lastResult: log.is_correct // 新しい順なので最初に来たものが最新結果
+        lastResult: log.is_correct
       };
     }
     statsByCard[log.card_id].attempts++;
     if (log.is_correct) statsByCard[log.card_id].correct++;
   });
 
-  // 苦手カードの抽出（直近が不正解、または正答率70%未満）
   weakCards = currentCards.filter(card => {
     const st = statsByCard[card.id];
-    if (!st || st.attempts === 0) return false; // 未学習は苦手扱いしない
+    if (!st || st.attempts === 0) return false;
     const rate = st.correct / st.attempts;
     return st.lastResult === false || rate < 0.7;
   });
@@ -421,7 +628,6 @@ async function loadCardsAndStats(deckId) {
     const st = statsByCard[card.id];
     const isWeak = weakCards.some(w => w.id === card.id);
 
-    // 正答率バッジの生成
     let accuracyHtml = '<span class="text-xs text-slate-400">未学習</span>';
     if (st && st.attempts > 0) {
       const pct = Math.round((st.correct / st.attempts) * 100);
@@ -460,7 +666,7 @@ async function loadCardsAndStats(deckId) {
           </div>
           <div class="pt-1">${summaryHtml}</div>
         </div>
-        <button onclick="window.deleteCard('${card.id}')" class="text-xs text-rose-500 hover:bg-rose-50 px-2.5 py-1 rounded transition shrink-0">削除</button>
+        ${isDeckOwner ? `<button onclick="window.deleteCard('${card.id}')" class="text-xs text-rose-500 hover:bg-rose-50 px-2.5 py-1 rounded transition shrink-0">削除</button>` : ''}
       </div>
     `;
   }).join('');
@@ -476,7 +682,7 @@ function updateStatsUI(totalAttempts, totalCorrect, weakCount) {
 }
 
 window.deleteCard = async function(cardId) {
-  if (!confirm('このカードを削除しますか？')) return;
+  if (!isDeckOwner || !confirm('このカードを削除しますか？')) return;
   const { error } = await supabaseClient.from('cards').delete().eq('id', cardId);
   if (error) alert(`削除エラー: ${error.message}`);
   else if (currentDeck) await loadCardsAndStats(currentDeck.id);
@@ -485,7 +691,7 @@ window.deleteCard = async function(cardId) {
 // =============================================================
 // 8. 学習（クイズ）モード & 4カードタイプの出題・判定ロジック
 // =============================================================
-function startQuizSession(cardsToStudy, isWeakOnly) {
+function startQuizSession(cardsToStudy, isWeakOnly, skipPushState = false) {
   if (!cardsToStudy || cardsToStudy.length === 0) {
     return alert('出題できるカードがありません');
   }
@@ -493,6 +699,13 @@ function startQuizSession(cardsToStudy, isWeakOnly) {
   studyIndex = 0;
   studyCorrectCount = 0;
   studyModeLabel = isWeakOnly ? '🔥 苦手復習モード' : '全問モード';
+
+  if (!skipPushState && currentDeck) {
+    const params = currentDeck.share_id && !isDeckOwner
+      ? { share: currentDeck.share_id, mode: isWeakOnly ? 'weak' : 'study' }
+      : { deck: currentDeck.id, mode: isWeakOnly ? 'weak' : 'study' };
+    updateUrlParams(params);
+  }
 
   studyModeBadge.textContent = studyModeLabel;
   studyModeBadge.className = isWeakOnly
@@ -516,8 +729,12 @@ startWeakStudyBtn.addEventListener('click', () => {
 });
 
 exitStudyBtn.addEventListener('click', () => {
-  if (currentDeck) window.openDeck(currentDeck.id);
-  else showView('dashboard');
+  if (currentDeck) {
+    setupAndRenderDeck(currentDeck, null, false);
+  } else {
+    updateUrlParams({});
+    showView('dashboard');
+  }
 });
 
 function renderStudyQuestion() {
@@ -716,11 +933,10 @@ window.submitAnswer = async function(isCorrect) {
 
   if (isCorrect) studyCorrectCount++;
 
-  const { data: { user } } = await supabaseClient.auth.getUser();
-  if (user && card) {
+  if (currentUser && card) {
     await supabaseClient.from('learning_logs').insert([
       {
-        user_id: user.id,
+        user_id: currentUser.id,
         card_id: card.id,
         is_correct: isCorrect,
         time_taken_sec: timeTakenSec
@@ -744,13 +960,22 @@ function renderStudyComplete() {
         正答率: <span class="font-bold text-indigo-600 text-2xl">${rate}%</span>（${studyCorrectCount} / ${total} 問正解）
       </p>
       <div class="pt-6 flex justify-center gap-3">
-        <button type="button" onclick="window.openDeck('${currentDeck.id}')" class="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold px-6 py-3 rounded-xl transition">
+        <button type="button" onclick="window.returnToDeckDetail()" class="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold px-6 py-3 rounded-xl transition">
           単語帳に戻る（成績を更新）
         </button>
       </div>
     </div>
   `;
 }
+
+window.returnToDeckDetail = function() {
+  if (currentDeck) {
+    setupAndRenderDeck(currentDeck, null, false);
+  } else {
+    updateUrlParams({});
+    showView('dashboard');
+  }
+};
 
 // =============================================================
 // 9. ユーティリティ
