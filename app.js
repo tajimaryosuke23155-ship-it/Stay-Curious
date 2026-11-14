@@ -403,25 +403,20 @@ createClassBtn.addEventListener('click', async () => {
   if (!name) return alert('クラス名を入力してください');
   if (!currentUser) return;
 
-  const { data: created, error } = await supabaseClient
-    .from('classes')
-    .insert([{ name, description: desc || null, owner_id: currentUser.id }])
-    .select()
-    .single();
+  const { data: newClassId, error } = await supabaseClient
+    .rpc('create_new_class', {
+      class_name: name,
+      class_desc: desc || null
+    });
 
-  if (error) {
-    alert(`クラス作成エラー: ${error.message}`);
+  if (error || !newClassId) {
+    alert(`クラス作成エラー: ${error ? error.message : '作成に失敗しました'}`);
     return;
   }
 
-  // オーナー自身も class_members に登録
-  await supabaseClient.from('class_members').insert([
-    { class_id: created.id, user_id: currentUser.id, role: 'owner' }
-  ]);
-
   newClassName.value = '';
   newClassDesc.value = '';
-  await window.openClassPage(created.id);
+  await window.openClassPage(newClassId);
 });
 
 async function joinClassWithCode(rawCode) {
