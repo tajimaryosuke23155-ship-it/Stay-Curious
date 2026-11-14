@@ -4,6 +4,7 @@ import { fetchDisplayNames } from './auth.js';
 import { updateUrlParams, showView } from './router.js';
 import { getUserClasses } from './classes.js';
 import { startQuizSession } from './study.js';
+import { getUserFolders } from './folders.js';
 
 export async function openDeck(deckId, autoStudyMode = null, skipPushState = false) {
   const { data: deck, error } = await supabaseClient.from('decks').select('*').eq('id', deckId).single();
@@ -68,6 +69,7 @@ export async function setupAndRenderDeck(deck, autoStudyMode = null, skipPushSta
   }
 
   await checkAndRenderSaveButton(deck.id);
+  await renderDeckFolderToggles(deck.id);
   renderCardFormFields(state.selectedCardType);
   await loadCardsAndStats(deck.id);
 
