@@ -400,6 +400,10 @@
 
   </main>
 
+  <script>
+  window.addEventListener('error', (e) => alert('エラー: ' + e.message + '\n場所: ' + e.filename));
+  window.addEventListener('unhandledrejection', (e) => alert('非同期エラー: ' + e.reason));
+</script>
   
   <!-- スクリプト参照（ES Modules） -->
   <script type="module" src="js/main.js"></script>
