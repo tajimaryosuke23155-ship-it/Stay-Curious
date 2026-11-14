@@ -6,7 +6,8 @@ const viewMap = {
   detail: document.getElementById('deck-detail-section'),
   study: document.getElementById('study-section'),
   creator: document.getElementById('creator-section'),
-  class: document.getElementById('class-detail-section')
+  class: document.getElementById('class-detail-section'),
+  folder: document.getElementById('folder-detail-section')
 };
 
 // 循環参照を避けるための画面ハンドラ登録
@@ -17,7 +18,7 @@ export function registerRouteHandlers(newHandlers) {
 
 export function updateUrlParams(paramsObj, replace = false) {
   const url = new URL(window.location.href);
-  ['deck', 'share', 'mode', 'user', 'class', 'join_class'].forEach(k => url.searchParams.delete(k));
+  ['deck', 'share', 'mode', 'user', 'class', 'join_class','folder'].forEach(k => url.searchParams.delete(k));
 
   Object.entries(paramsObj).forEach(([k, v]) => {
     if (v !== null && v !== undefined && v !== '') {
@@ -50,6 +51,7 @@ export async function routeFromCurrentUrl() {
   const shareId = params.get('share');
   const deckId = params.get('deck');
   const mode = params.get('mode');
+  const folderId = params.get('folder');
 
   if (joinClassCode && handlers.joinClassWithCode) {
     await handlers.joinClassWithCode(joinClassCode);
@@ -61,6 +63,8 @@ export async function routeFromCurrentUrl() {
     await handlers.openDeckByShareId(shareId, mode);
   } else if (deckId && handlers.openDeck) {
     await handlers.openDeck(deckId, mode, true);
+  } else if (folderId && handlers.openFolderPage) {
+    await handlers.openFolderPage(folderId, true); 
   } else {
     showView('dashboard');
   }
@@ -85,4 +89,5 @@ export function initRouterEvents() {
   document.getElementById('back-to-dashboard-btn').addEventListener('click', goHome);
   document.getElementById('creator-back-btn').addEventListener('click', goHome);
   document.getElementById('class-back-btn').addEventListener('click', goHome);
+  document.getElementById('folder-back-btn').addEventListener('click', goHome);
 }
