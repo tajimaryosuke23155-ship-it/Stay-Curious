@@ -27,6 +27,9 @@
     <!-- 1. 認証画面（未ログイン時） -->
     <section id="auth-section" class="bg-white p-6 rounded-xl shadow-md max-w-md mx-auto mt-12">
       <h2 class="text-xl font-bold mb-4 text-center">ログイン / 新規登録</h2>
+      <p id="share-login-notice" class="hidden text-xs bg-indigo-50 text-indigo-700 p-3 rounded-lg mb-4 text-center">
+        共有された単語帳を開くには、ログインまたは新規登録を行ってください。
+      </p>
       <form id="auth-form" class="space-y-4" onsubmit="return false;">
         <div>
           <label for="auth-email" class="block text-sm font-medium mb-1">メールアドレス</label>
@@ -44,7 +47,7 @@
     </section>
 
     <!-- 2. ダッシュボード（ログイン後画面） -->
-    <section id="dashboard-section" class="hidden space-y-6">
+    <section id="dashboard-section" class="hidden space-y-8">
       <!-- 新規単語帳作成 -->
       <div class="bg-white p-6 rounded-xl shadow-md">
         <h2 class="text-xl font-bold mb-4">新しい単語帳を作成</h2>
@@ -55,10 +58,18 @@
         </form>
       </div>
 
-      <!-- 単語帳一覧 -->
+      <!-- マイ単語帳一覧 -->
       <div>
         <h2 class="text-xl font-bold mb-4">マイ単語帳一覧</h2>
         <div id="decks-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- JSから動的に挿入 -->
+        </div>
+      </div>
+
+      <!-- 全体公開されている単語帳一覧 -->
+      <div>
+        <h2 class="text-xl font-bold mb-4">🌐 公開されているみんなの単語帳</h2>
+        <div id="public-decks-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <!-- JSから動的に挿入 -->
         </div>
       </div>
@@ -70,7 +81,10 @@
         <div class="flex flex-wrap justify-between items-start gap-4">
           <div>
             <button id="back-to-dashboard-btn" type="button" class="text-sm text-indigo-600 hover:underline font-medium mb-1">← 単語帳一覧に戻る</button>
-            <h2 id="detail-deck-title" class="text-2xl font-bold text-slate-800"></h2>
+            <div class="flex items-center gap-2">
+              <h2 id="detail-deck-title" class="text-2xl font-bold text-slate-800"></h2>
+              <span id="shared-deck-badge" class="hidden text-xs font-bold px-2.5 py-0.5 rounded bg-amber-100 text-amber-800">共有単語帳（閲覧・学習のみ）</span>
+            </div>
             <p id="detail-deck-textbook" class="text-xs text-indigo-600 font-semibold mt-1"></p>
           </div>
           <div class="flex flex-wrap gap-2">
@@ -83,6 +97,24 @@
           </div>
         </div>
 
+        <!-- 共有設定パネル（オーナーのみ表示） -->
+        <div id="share-settings-panel" class="hidden bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-2">
+            <label for="deck-visibility-select" class="text-xs font-bold text-slate-600">公開設定:</label>
+            <select id="deck-visibility-select" class="border rounded-lg px-2.5 py-1.5 text-xs bg-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="private">🔒 非公開（自分のみ）</option>
+              <option value="link">🔗 リンクを知っている人のみ</option>
+              <option value="public">🌐 全体公開（一覧に表示）</option>
+            </select>
+          </div>
+          <div id="share-link-box" class="hidden flex items-center gap-2">
+            <input type="text" id="share-url-input" readonly class="text-xs bg-white border rounded-lg px-2.5 py-1.5 w-48 md:w-64 text-slate-500">
+            <button id="copy-share-url-btn" type="button" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition">
+              🔗 URLをコピー
+            </button>
+          </div>
+        </div>
+
         <!-- 学習成績サマリー -->
         <div class="grid grid-cols-3 gap-3 pt-3 border-t border-slate-100 text-center">
           <div class="bg-slate-50 p-2.5 rounded-lg">
@@ -90,7 +122,7 @@
             <p id="stat-total-cards" class="text-lg font-bold text-slate-800">0枚</p>
           </div>
           <div class="bg-slate-50 p-2.5 rounded-lg">
-            <p class="text-xs text-slate-500">総合正答率</p>
+            <p class="text-xs text-slate-500">自分の正答率</p>
             <p id="stat-accuracy-rate" class="text-lg font-bold text-indigo-600">--%</p>
           </div>
           <div class="bg-slate-50 p-2.5 rounded-lg">
@@ -100,8 +132,8 @@
         </div>
       </div>
 
-      <!-- カード新規作成フォーム -->
-      <div class="bg-white p-6 rounded-xl shadow-md space-y-4">
+      <!-- カード新規作成フォーム（オーナーのみ表示） -->
+      <div id="create-card-container" class="bg-white p-6 rounded-xl shadow-md space-y-4">
         <h3 class="text-lg font-bold text-slate-800">問題カードを追加</h3>
 
         <!-- 4種類のカード形式選択 -->
