@@ -11,12 +11,14 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 // =============================================================
 let currentDeck = null;
 let currentCards = [];
+let weakCards = [];
 let selectedCardType = 'basic';
 
 // 学習モード用状態
 let studyQueue = [];
 let studyIndex = 0;
 let studyCorrectCount = 0;
+let studyModeLabel = '全問モード';
 let questionStartTime = 0;
 let currentOrderSelection = [];
 
@@ -47,7 +49,14 @@ const decksList = document.getElementById('decks-list');
 const backToDashboardBtn = document.getElementById('back-to-dashboard-btn');
 const detailDeckTitle = document.getElementById('detail-deck-title');
 const detailDeckTextbook = document.getElementById('detail-deck-textbook');
+const startWeakStudyBtn = document.getElementById('start-weak-study-btn');
+const weakCardsCount = document.getElementById('weak-cards-count');
 const startStudyBtn = document.getElementById('start-study-btn');
+
+const statTotalCards = document.getElementById('stat-total-cards');
+const statAccuracyRate = document.getElementById('stat-accuracy-rate');
+const statWeakCards = document.getElementById('stat-weak-cards');
+
 const cardTypeTabs = document.querySelectorAll('.card-type-tab');
 const dynamicCardFields = document.getElementById('dynamic-card-fields');
 const cardPageNumber = document.getElementById('card-page-number');
@@ -58,6 +67,7 @@ const cardsList = document.getElementById('cards-list');
 
 // 学習画面
 const exitStudyBtn = document.getElementById('exit-study-btn');
+const studyModeBadge = document.getElementById('study-mode-badge');
 const studyProgress = document.getElementById('study-progress');
 const studyCardContainer = document.getElementById('study-card-container');
 
@@ -197,7 +207,7 @@ window.deleteDeck = async function(deckId) {
 };
 
 // =============================================================
-// 7. 単語帳詳細 & 4種類のカード作成・一覧管理
+// 7. 単語帳詳細 & 4種類のカード作成・学習履歴集計
 // =============================================================
 window.openDeck = async function(deckId) {
   const { data: deck, error } = await supabaseClient
@@ -217,7 +227,7 @@ window.openDeck = async function(deckId) {
 
   renderCardFormFields(selectedCardType);
   showView('detail');
-  await loadCards(deck.id);
+  await loadCardsAndStats(deck.id);
 };
 
 // タブ切り替えで入力フォームを動的生成
@@ -331,32 +341,73 @@ createCardBtn.addEventListener('click', async () => {
   } else {
     renderCardFormFields(selectedCardType);
     cardQuestionNumber.value = '';
-    await loadCards(currentDeck.id);
+    await loadCardsAndStats(currentDeck.id);
   }
 });
 
-// カード一覧取得＆表示
-async function loadCards(deckId) {
-  cardsList.innerHTML = '<p class="text-slate-500 text-sm">カードを読み込み中...</p>';
+// カード一覧 ＋ learning_logs から正答率と苦手問題を集計
+async function loadCardsAndStats(deckId) {
+  cardsList.innerHTML = '<p class="text-slate-500 text-sm">カードと学習履歴を読み込み中...</p>';
 
-  const { data: cards, error } = await supabaseClient
+  const { data: cards, error: cardsError } = await supabaseClient
     .from('cards')
     .select('*')
     .eq('deck_id', deckId)
     .order('created_at', { ascending: true });
 
-  if (error) {
-    cardsList.innerHTML = `<p class="text-rose-500 text-sm">読み込みエラー: ${escapeHtml(error.message)}</p>`;
+  if (cardsError) {
+    cardsList.innerHTML = `<p class="text-rose-500 text-sm">読み込みエラー: ${escapeHtml(cardsError.message)}</p>`;
     return;
   }
 
   currentCards = cards || [];
   cardsCount.textContent = currentCards.length;
+  statTotalCards.textContent = `${currentCards.length}枚`;
 
   if (currentCards.length === 0) {
+    weakCards = [];
+    updateStatsUI(0, 0, 0);
     cardsList.innerHTML = '<p class="text-slate-500 text-sm bg-white p-4 rounded-xl">まだカードがありません。上のフォームから追加しましょう！</p>';
     return;
   }
+
+  // この単語帳に含まれるカードの学習ログを取得（新しい順）
+  const cardIds = currentCards.map(c => c.id);
+  const { data: logs } = await supabaseClient
+    .from('learning_logs')
+    .select('card_id, is_correct, reviewed_at')
+    .in('card_id', cardIds)
+    .order('reviewed_at', { ascending: false });
+
+  // カードIDごとに統計を集計
+  const statsByCard = {};
+  let totalAttempts = 0;
+  let totalCorrect = 0;
+
+  (logs || []).forEach(log => {
+    totalAttempts++;
+    if (log.is_correct) totalCorrect++;
+
+    if (!statsByCard[log.card_id]) {
+      statsByCard[log.card_id] = {
+        attempts: 0,
+        correct: 0,
+        lastResult: log.is_correct // 新しい順なので最初に来たものが最新結果
+      };
+    }
+    statsByCard[log.card_id].attempts++;
+    if (log.is_correct) statsByCard[log.card_id].correct++;
+  });
+
+  // 苦手カードの抽出（直近が不正解、または正答率70%未満）
+  weakCards = currentCards.filter(card => {
+    const st = statsByCard[card.id];
+    if (!st || st.attempts === 0) return false; // 未学習は苦手扱いしない
+    const rate = st.correct / st.attempts;
+    return st.lastResult === false || rate < 0.7;
+  });
+
+  updateStatsUI(totalAttempts, totalCorrect, weakCards.length);
 
   const typeBadgeMap = {
     basic: { label: '一問一答', color: 'bg-blue-100 text-blue-700' },
@@ -367,8 +418,18 @@ async function loadCards(deckId) {
 
   cardsList.innerHTML = currentCards.map(card => {
     const badge = typeBadgeMap[card.card_type] || { label: card.card_type, color: 'bg-slate-100 text-slate-700' };
-    let summaryHtml = '';
+    const st = statsByCard[card.id];
+    const isWeak = weakCards.some(w => w.id === card.id);
 
+    // 正答率バッジの生成
+    let accuracyHtml = '<span class="text-xs text-slate-400">未学習</span>';
+    if (st && st.attempts > 0) {
+      const pct = Math.round((st.correct / st.attempts) * 100);
+      const rateColor = pct >= 80 ? 'text-emerald-600' : pct >= 50 ? 'text-amber-600' : 'text-rose-600';
+      accuracyHtml = `<span class="text-xs font-semibold ${rateColor}">正答率 ${pct}% (${st.correct}/${st.attempts})</span>`;
+    }
+
+    let summaryHtml = '';
     if (card.card_type === 'basic') {
       summaryHtml = `<p class="font-bold text-slate-800">${escapeHtml(card.content.front)}</p>
                      <p class="text-sm text-slate-600 mt-1">答: ${escapeHtml(card.content.back)}</p>`;
@@ -389,11 +450,13 @@ async function loadCards(deckId) {
     ].filter(Boolean).join(' / ');
 
     return `
-      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex justify-between items-start gap-4">
+      <div class="bg-white p-4 rounded-xl shadow-sm border ${isWeak ? 'border-rose-200' : 'border-slate-100'} flex justify-between items-start gap-4">
         <div class="space-y-1">
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             <span class="text-xs font-semibold px-2 py-0.5 rounded ${badge.color}">${badge.label}</span>
-            ${metaText ? `<span class="text-xs text-slate-400">${escapeHtml(metaText)}</span>` : ''}
+            ${isWeak ? '<span class="text-xs font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-700">🔥 要復習</span>' : ''}
+            ${accuracyHtml}
+            ${metaText ? `<span class="text-xs text-slate-400">・${escapeHtml(metaText)}</span>` : ''}
           </div>
           <div class="pt-1">${summaryHtml}</div>
         </div>
@@ -403,30 +466,57 @@ async function loadCards(deckId) {
   }).join('');
 }
 
+function updateStatsUI(totalAttempts, totalCorrect, weakCount) {
+  statAccuracyRate.textContent = totalAttempts > 0
+    ? `${Math.round((totalCorrect / totalAttempts) * 100)}%`
+    : '--%';
+  statWeakCards.textContent = `${weakCount}枚`;
+  weakCardsCount.textContent = weakCount;
+  startWeakStudyBtn.disabled = weakCount === 0;
+}
+
 window.deleteCard = async function(cardId) {
   if (!confirm('このカードを削除しますか？')) return;
   const { error } = await supabaseClient.from('cards').delete().eq('id', cardId);
   if (error) alert(`削除エラー: ${error.message}`);
-  else if (currentDeck) await loadCards(currentDeck.id);
+  else if (currentDeck) await loadCardsAndStats(currentDeck.id);
 };
 
 // =============================================================
 // 8. 学習（クイズ）モード & 4カードタイプの出題・判定ロジック
 // =============================================================
-startStudyBtn.addEventListener('click', () => {
-  if (!currentCards || currentCards.length === 0) {
-    return alert('学習するカードがありません。先に問題カードを追加してください！');
+function startQuizSession(cardsToStudy, isWeakOnly) {
+  if (!cardsToStudy || cardsToStudy.length === 0) {
+    return alert('出題できるカードがありません');
   }
-  // カードをシャッフルして出題キューを作成
-  studyQueue = [...currentCards].sort(() => Math.random() - 0.5);
+  studyQueue = [...cardsToStudy].sort(() => Math.random() - 0.5);
   studyIndex = 0;
   studyCorrectCount = 0;
+  studyModeLabel = isWeakOnly ? '🔥 苦手復習モード' : '全問モード';
+
+  studyModeBadge.textContent = studyModeLabel;
+  studyModeBadge.className = isWeakOnly
+    ? 'text-xs font-bold px-2.5 py-0.5 rounded bg-rose-100 text-rose-700'
+    : 'text-xs font-bold px-2.5 py-0.5 rounded bg-indigo-100 text-indigo-700';
+
   showView('study');
   renderStudyQuestion();
+}
+
+startStudyBtn.addEventListener('click', () => {
+  if (currentCards.length === 0) {
+    return alert('学習するカードがありません。先に問題カードを追加してください！');
+  }
+  startQuizSession(currentCards, false);
+});
+
+startWeakStudyBtn.addEventListener('click', () => {
+  if (weakCards.length === 0) return;
+  startQuizSession(weakCards, true);
 });
 
 exitStudyBtn.addEventListener('click', () => {
-  if (currentDeck) showView('detail');
+  if (currentDeck) window.openDeck(currentDeck.id);
   else showView('dashboard');
 });
 
@@ -559,7 +649,6 @@ function renderStudyQuestion() {
       const userInputs = [...document.querySelectorAll('.multi-input')].map(el => el.value.trim());
       if (userInputs.some(v => !v)) return alert('すべての空欄を入力してください');
 
-      // 順不同で完全一致しているか判定（重複入力の不正防止のためセット比較）
       const normalize = s => s.toLowerCase().replace(/\s+/g, '');
       const expectedSet = new Set(card.content.answers.map(normalize));
       const userSet = new Set(userInputs.map(normalize));
@@ -607,14 +696,12 @@ function renderStudyQuestion() {
   }
 }
 
-// 判定結果表示 ＋ 次へボタンへの切り替え
 function showResultAndNext(isCorrect, message) {
   const feedbackEl = document.getElementById('study-feedback');
   feedbackEl.classList.remove('hidden');
   feedbackEl.classList.add(isCorrect ? 'bg-emerald-50' : 'bg-rose-50', isCorrect ? 'text-emerald-700' : 'text-rose-700');
   feedbackEl.textContent = message;
 
-  // ボタンエリアを「次の問題へ」に差し替え
   const controlDiv = studyCardContainer.lastElementChild;
   controlDiv.innerHTML = `
     <button type="button" onclick="window.submitAnswer(${isCorrect})" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-xl transition">
@@ -623,14 +710,12 @@ function showResultAndNext(isCorrect, message) {
   `;
 }
 
-// 学習ログ（learning_logs）の保存＆次の問題へ
 window.submitAnswer = async function(isCorrect) {
   const card = studyQueue[studyIndex];
   const timeTakenSec = Math.max(1, Math.round((Date.now() - questionStartTime) / 1000));
 
   if (isCorrect) studyCorrectCount++;
 
-  // Supabaseの learning_logs テーブルへ履歴を保存
   const { data: { user } } = await supabaseClient.auth.getUser();
   if (user && card) {
     await supabaseClient.from('learning_logs').insert([
@@ -647,7 +732,6 @@ window.submitAnswer = async function(isCorrect) {
   renderStudyQuestion();
 };
 
-// 全問終了画面
 function renderStudyComplete() {
   const total = studyQueue.length;
   const rate = Math.round((studyCorrectCount / total) * 100);
@@ -655,16 +739,13 @@ function renderStudyComplete() {
   studyCardContainer.innerHTML = `
     <div class="text-center py-8 space-y-4">
       <div class="text-5xl">🎉</div>
-      <h3 class="text-2xl font-bold text-slate-800">学習お疲れさまでした！</h3>
+      <h3 class="text-2xl font-bold text-slate-800">${escapeHtml(studyModeLabel)} 完了！</h3>
       <p class="text-lg text-slate-600">
         正答率: <span class="font-bold text-indigo-600 text-2xl">${rate}%</span>（${studyCorrectCount} / ${total} 問正解）
       </p>
       <div class="pt-6 flex justify-center gap-3">
         <button type="button" onclick="window.openDeck('${currentDeck.id}')" class="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold px-6 py-3 rounded-xl transition">
-          単語帳に戻る
-        </button>
-        <button type="button" onclick="document.getElementById('start-study-btn').click()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-3 rounded-xl transition">
-          もう一度解く
+          単語帳に戻る（成績を更新）
         </button>
       </div>
     </div>
