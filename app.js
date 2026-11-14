@@ -10,11 +10,16 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 // 2. アプリケーション状態（State）
 // =============================================================
 let currentUser = null;
+let currentDisplayName = '';
 let currentDeck = null;
 let isDeckOwner = false;
+let isCurrentDeckSaved = false;
 let currentCards = [];
 let weakCards = [];
 let selectedCardType = 'basic';
+
+// プロフィール名キャッシュ（user_id -> display_name）
+const profileCache = {};
 
 // 学習モード用状態
 let studyQueue = [];
@@ -32,10 +37,12 @@ const shareLoginNotice = document.getElementById('share-login-notice');
 const dashboardSection = document.getElementById('dashboard-section');
 const deckDetailSection = document.getElementById('deck-detail-section');
 const studySection = document.getElementById('study-section');
+const creatorSection = document.getElementById('creator-section');
 
 const homeLogo = document.getElementById('home-logo');
 const userStatus = document.getElementById('user-status');
-const userEmail = document.getElementById('user-email');
+const editProfileBtn = document.getElementById('edit-profile-btn');
+const userDisplayNameEl = document.getElementById('user-display-name');
 
 const authEmail = document.getElementById('auth-email');
 const authPassword = document.getElementById('auth-password');
@@ -47,6 +54,7 @@ const deckTitle = document.getElementById('deck-title');
 const textbookName = document.getElementById('textbook-name');
 const createDeckBtn = document.getElementById('create-deck-btn');
 const decksList = document.getElementById('decks-list');
+const savedDecksList = document.getElementById('saved-decks-list');
 const publicDecksList = document.getElementById('public-decks-list');
 
 // 詳細・カード作成・共有画面
@@ -54,6 +62,9 @@ const backToDashboardBtn = document.getElementById('back-to-dashboard-btn');
 const detailDeckTitle = document.getElementById('detail-deck-title');
 const sharedDeckBadge = document.getElementById('shared-deck-badge');
 const detailDeckTextbook = document.getElementById('detail-deck-textbook');
+const detailCreatorBtn = document.getElementById('detail-creator-btn');
+const detailCreatorName = document.getElementById('detail-creator-name');
+const toggleSaveDeckBtn = document.getElementById('toggle-save-deck-btn');
 const startWeakStudyBtn = document.getElementById('start-weak-study-btn');
 const weakCardsCount = document.getElementById('weak-cards-count');
 const startStudyBtn = document.getElementById('start-study-btn');
@@ -83,6 +94,12 @@ const studyModeBadge = document.getElementById('study-mode-badge');
 const studyProgress = document.getElementById('study-progress');
 const studyCardContainer = document.getElementById('study-card-container');
 
+// クリエイターページ
+const creatorBackBtn = document.getElementById('creator-back-btn');
+const creatorPageName = document.getElementById('creator-page-name');
+const creatorPageSummary = document.getElementById('creator-page-summary');
+const creatorDecksList = document.getElementById('creator-decks-list');
+
 // =============================================================
 // 4. URLルーティング（リロード維持 & ブラウザ戻る対応）
 // =============================================================
@@ -91,6 +108,7 @@ function updateUrlParams(paramsObj, replace = false) {
   url.searchParams.delete('deck');
   url.searchParams.delete('share');
   url.searchParams.delete('mode');
+  url.searchParams.delete('user');
 
   Object.entries(paramsObj).forEach(([k, v]) => {
     if (v !== null && v !== undefined && v !== '') {
@@ -110,25 +128,30 @@ function showView(viewName) {
   dashboardSection.classList.add('hidden');
   deckDetailSection.classList.add('hidden');
   studySection.classList.add('hidden');
+  creatorSection.classList.add('hidden');
 
   if (viewName === 'auth') authSection.classList.remove('hidden');
   if (viewName === 'dashboard') {
     dashboardSection.classList.remove('hidden');
     loadDecks();
+    loadSavedDecks();
     loadPublicDecks();
   }
   if (viewName === 'detail') deckDetailSection.classList.remove('hidden');
   if (viewName === 'study') studySection.classList.remove('hidden');
+  if (viewName === 'creator') creatorSection.classList.remove('hidden');
 }
 
-// URLの状態から適切な画面を復元する
 async function routeFromCurrentUrl() {
   const params = new URLSearchParams(window.location.search);
+  const creatorUserId = params.get('user');
   const shareId = params.get('share');
   const deckId = params.get('deck');
-  const mode = params.get('mode'); // 'study' or 'weak'
+  const mode = params.get('mode');
 
-  if (shareId) {
+  if (creatorUserId) {
+    await window.openCreatorPage(creatorUserId, true);
+  } else if (shareId) {
     await window.openDeckByShareId(shareId, mode);
   } else if (deckId) {
     await window.openDeck(deckId, mode, true);
@@ -137,7 +160,6 @@ async function routeFromCurrentUrl() {
   }
 }
 
-// ブラウザの「戻る / 進む」ボタン対応
 window.addEventListener('popstate', async () => {
   if (currentUser) {
     await routeFromCurrentUrl();
@@ -157,20 +179,95 @@ backToDashboardBtn.addEventListener('click', () => {
   showView('dashboard');
 });
 
+creatorBackBtn.addEventListener('click', () => {
+  updateUrlParams({});
+  showView('dashboard');
+});
+
 // =============================================================
-// 5. 認証状態の監視 & ログイン処理
+// 5. プロフィール（ユーザー名）取得・設定
+// =============================================================
+async function initUserProfile(user) {
+  const defaultName = user.email ? user.email.split('@')[0] : 'ユーザー';
+  const { data } = await supabaseClient
+    .from('profiles')
+    .select('display_name')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (data && data.display_name) {
+    currentDisplayName = data.display_name;
+  } else {
+    currentDisplayName = defaultName;
+    // 初回ログイン時にデフォルト表示名を自動登録
+    await supabaseClient.from('profiles').upsert({
+      id: user.id,
+      display_name: defaultName
+    });
+  }
+  profileCache[user.id] = currentDisplayName;
+  userDisplayNameEl.textContent = currentDisplayName;
+}
+
+async function fetchDisplayNames(userIds) {
+  const uniqueIds = [...new Set(userIds.filter(Boolean))];
+  const missingIds = uniqueIds.filter(id => !profileCache[id]);
+
+  if (missingIds.length > 0) {
+    const { data } = await supabaseClient
+      .from('profiles')
+      .select('id, display_name')
+      .in('id', missingIds);
+
+    (data || []).forEach(p => {
+      profileCache[p.id] = p.display_name;
+    });
+  }
+
+  uniqueIds.forEach(id => {
+    if (!profileCache[id]) {
+      profileCache[id] = `ユーザー (${id.slice(0, 6)})`;
+    }
+  });
+}
+
+editProfileBtn.addEventListener('click', async () => {
+  if (!currentUser) return;
+  const newName = prompt('新しいユーザー名（表示名）を入力してください:', currentDisplayName);
+  if (newName === null) return;
+  const trimmed = newName.trim();
+  if (!trimmed) return alert('ユーザー名を入力してください');
+
+  const { error } = await supabaseClient
+    .from('profiles')
+    .upsert({ id: currentUser.id, display_name: trimmed, updated_at: new Date().toISOString() });
+
+  if (error) {
+    alert(`ユーザー名の更新に失敗しました: ${error.message}`);
+  } else {
+    currentDisplayName = trimmed;
+    profileCache[currentUser.id] = trimmed;
+    userDisplayNameEl.textContent = trimmed;
+    if (isDeckOwner && currentDeck) {
+      detailCreatorName.textContent = trimmed;
+    }
+  }
+});
+
+// =============================================================
+// 6. 認証状態の監視 & ログイン処理
 // =============================================================
 supabaseClient.auth.onAuthStateChange(async (event, session) => {
   if (session) {
     currentUser = session.user;
     userStatus.classList.remove('hidden');
-    userEmail.textContent = session.user.email;
+    await initUserProfile(session.user);
     await routeFromCurrentUrl();
   } else {
     currentUser = null;
     userStatus.classList.add('hidden');
     const params = new URLSearchParams(window.location.search);
-    if (params.get('share')) {
+    if (params.get('share') || params.get('user')) {
       shareLoginNotice.classList.remove('hidden');
     } else {
       shareLoginNotice.classList.add('hidden');
@@ -202,11 +299,11 @@ logoutBtn.addEventListener('click', async () => {
 });
 
 // =============================================================
-// 6. 単語帳（decks）の操作（マイ単語帳 & 全体公開単語帳）
+// 7. 単語帳一覧（マイ単語帳・保存ライブラリ・全体公開）
 // =============================================================
 async function loadDecks() {
   if (!currentUser) return;
-  decksList.innerHTML = '<p class="text-gray-500">読み込み中...</p>';
+  decksList.innerHTML = '<p class="text-gray-500 text-sm">読み込み中...</p>';
 
   const { data: decks, error } = await supabaseClient
     .from('decks')
@@ -215,12 +312,12 @@ async function loadDecks() {
     .order('created_at', { ascending: false });
 
   if (error) {
-    decksList.innerHTML = `<p class="text-rose-500">取得エラー: ${escapeHtml(error.message)}</p>`;
+    decksList.innerHTML = `<p class="text-rose-500 text-sm">取得エラー: ${escapeHtml(error.message)}</p>`;
     return;
   }
 
   if (!decks || decks.length === 0) {
-    decksList.innerHTML = '<p class="text-gray-500">まだ単語帳がありません。</p>';
+    decksList.innerHTML = '<p class="text-gray-500 text-sm">まだ単語帳がありません。</p>';
     return;
   }
 
@@ -245,6 +342,57 @@ async function loadDecks() {
   `).join('');
 }
 
+async function loadSavedDecks() {
+  if (!currentUser) return;
+  savedDecksList.innerHTML = '<p class="text-gray-500 text-sm">読み込み中...</p>';
+
+  const { data: savedRows, error } = await supabaseClient
+    .from('saved_decks')
+    .select('deck_id, saved_at, decks(*)')
+    .eq('user_id', currentUser.id)
+    .order('saved_at', { ascending: false });
+
+  if (error) {
+    savedDecksList.innerHTML = `<p class="text-rose-500 text-sm">取得エラー: ${escapeHtml(error.message)}</p>`;
+    return;
+  }
+
+  const validDecks = (savedRows || []).map(r => r.decks).filter(Boolean);
+  if (validDecks.length === 0) {
+    savedDecksList.innerHTML = '<p class="text-gray-500 text-sm">まだ保存した単語帳はありません。共有リンクや公開単語帳から「☆ ライブラリに保存」を押すとここに並びます。</p>';
+    return;
+  }
+
+  await fetchDisplayNames(validDecks.map(d => d.user_id));
+
+  savedDecksList.innerHTML = validDecks.map(deck => {
+    const creatorName = profileCache[deck.user_id] || '作成者';
+    return `
+      <div onclick="window.openDeck('${deck.id}')" class="bg-white p-5 rounded-xl shadow border border-amber-100 hover:border-amber-300 hover:shadow-md cursor-pointer transition flex justify-between items-start gap-3">
+        <div>
+          <span class="text-xs font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-700">⭐ ライブラリ</span>
+          <h3 class="text-lg font-bold text-slate-800 mt-1">${escapeHtml(deck.title)}</h3>
+          <p class="text-xs text-indigo-600 font-semibold mt-0.5">${deck.textbook_name ? escapeHtml(deck.textbook_name) : '教科書未指定'}</p>
+          <button type="button" onclick="event.stopPropagation(); window.openCreatorPage('${deck.user_id}')" class="mt-2 inline-flex items-center gap-1 text-xs text-slate-600 hover:text-indigo-600 hover:underline font-medium">
+            👤 ${escapeHtml(creatorName)}
+          </button>
+        </div>
+        <button onclick="event.stopPropagation(); window.removeSavedDeck('${deck.id}')" class="text-xs bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600 px-2.5 py-1 rounded font-medium transition shrink-0">解除</button>
+      </div>
+    `;
+  }).join('');
+}
+
+window.removeSavedDeck = async function(deckId) {
+  if (!currentUser) return;
+  await supabaseClient
+    .from('saved_decks')
+    .delete()
+    .eq('user_id', currentUser.id)
+    .eq('deck_id', deckId);
+  loadSavedDecks();
+};
+
 async function loadPublicDecks() {
   if (!currentUser) return;
   publicDecksList.innerHTML = '<p class="text-gray-500 text-sm">読み込み中...</p>';
@@ -267,18 +415,26 @@ async function loadPublicDecks() {
     return;
   }
 
-  publicDecksList.innerHTML = decks.map(deck => `
-    <div onclick="window.openDeck('${deck.id}')" class="bg-white p-5 rounded-xl shadow border border-slate-100 hover:border-indigo-300 hover:shadow-md cursor-pointer transition">
-      <div class="flex justify-between items-start">
-        <div>
-          <span class="text-xs font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">🌐 公開単語帳</span>
-          <h3 class="text-lg font-bold text-slate-800 mt-1">${escapeHtml(deck.title)}</h3>
-          <p class="text-xs text-indigo-600 font-semibold mt-1">${deck.textbook_name ? escapeHtml(deck.textbook_name) : '教科書未指定'}</p>
+  await fetchDisplayNames(decks.map(d => d.user_id));
+
+  publicDecksList.innerHTML = decks.map(deck => {
+    const creatorName = profileCache[deck.user_id] || '作成者';
+    return `
+      <div onclick="window.openDeck('${deck.id}')" class="bg-white p-5 rounded-xl shadow border border-slate-100 hover:border-indigo-300 hover:shadow-md cursor-pointer transition">
+        <div class="flex justify-between items-start">
+          <div>
+            <span class="text-xs font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">🌐 公開単語帳</span>
+            <h3 class="text-lg font-bold text-slate-800 mt-1">${escapeHtml(deck.title)}</h3>
+            <p class="text-xs text-indigo-600 font-semibold mt-0.5">${deck.textbook_name ? escapeHtml(deck.textbook_name) : '教科書未指定'}</p>
+            <button type="button" onclick="event.stopPropagation(); window.openCreatorPage('${deck.user_id}')" class="mt-2 inline-flex items-center gap-1 text-xs text-slate-600 hover:text-indigo-600 hover:underline font-medium">
+              👤 ${escapeHtml(creatorName)}
+            </button>
+          </div>
+          <span class="text-xs text-indigo-600 font-bold">学習する →</span>
         </div>
-        <span class="text-xs text-indigo-600 font-bold">学習する →</span>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 createDeckBtn.addEventListener('click', async () => {
@@ -319,8 +475,126 @@ window.deleteDeck = async function(deckId) {
 };
 
 // =============================================================
-// 7. 単語帳詳細 & 共有設定 & 4種類のカード管理
+// 8. クリエイターページ（特定ユーザーの単語帳一覧）
 // =============================================================
+window.openCreatorPage = async function(targetUserId, skipPushState = false) {
+  if (!skipPushState) {
+    updateUrlParams({ user: targetUserId });
+  }
+
+  showView('creator');
+  creatorDecksList.innerHTML = '<p class="text-slate-500 text-sm">読み込み中...</p>';
+
+  await fetchDisplayNames([targetUserId]);
+  const creatorName = profileCache[targetUserId] || 'ユーザー';
+  const isMe = currentUser && currentUser.id === targetUserId;
+
+  creatorPageName.textContent = isMe ? `${creatorName}（あなた）` : creatorName;
+
+  const { data: decks, error } = await supabaseClient
+    .rpc('get_creator_decks', { target_user_id: targetUserId });
+
+  if (error) {
+    creatorDecksList.innerHTML = `<p class="text-rose-500 text-sm">取得エラー: ${escapeHtml(error.message)}</p>`;
+    return;
+  }
+
+  if (!decks || decks.length === 0) {
+    creatorPageSummary.textContent = '作成した単語帳はまだありません';
+    creatorDecksList.innerHTML = '<p class="text-slate-500 text-sm bg-white p-4 rounded-xl">単語帳がありません。</p>';
+    return;
+  }
+
+  const publicCount = decks.filter(d => d.visibility === 'public').length;
+  creatorPageSummary.textContent = `全 ${decks.length} セット作成（うち全体公開 ${publicCount} セット）`;
+
+  creatorDecksList.innerHTML = decks.map(deck => {
+    const canOpen = deck.visibility === 'public' || isMe;
+
+    if (canOpen) {
+      return `
+        <div onclick="window.openDeck('${deck.id}')" class="bg-white p-5 rounded-xl shadow border border-slate-100 hover:border-indigo-300 hover:shadow-md cursor-pointer transition">
+          <div class="flex justify-between items-start gap-2">
+            <div>
+              <span class="text-xs font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">
+                ${deck.visibility === 'public' ? '🌐 全体公開' : '🔒 自分の非公開'}
+              </span>
+              <h4 class="text-lg font-bold text-slate-800 mt-1">${escapeHtml(deck.title)}</h4>
+              <p class="text-xs text-indigo-600 font-semibold mt-0.5">${deck.textbook_name ? escapeHtml(deck.textbook_name) : '教科書未指定'}</p>
+              <p class="text-xs text-slate-500 mt-2">カード数: ${deck.card_count}枚</p>
+            </div>
+            <span class="text-xs text-indigo-600 font-bold shrink-0">中身を見る →</span>
+          </div>
+        </div>
+      `;
+    } else {
+      // 非公開・リンク限定セットはタイトルとカード枚数のみ表示（中身ロック）
+      return `
+        <div class="bg-slate-50 p-5 rounded-xl border border-slate-200 opacity-80">
+          <div class="flex justify-between items-start gap-2">
+            <div>
+              <span class="text-xs font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-600">🔒 非公開セット</span>
+              <h4 class="text-lg font-bold text-slate-700 mt-1">${escapeHtml(deck.title)}</h4>
+              <p class="text-xs text-slate-500 mt-2">カード数: ${deck.card_count}枚（非公開のため中身は閲覧できません）</p>
+            </div>
+            <span class="text-lg text-slate-400">🔒</span>
+          </div>
+        </div>
+      `;
+    }
+  }).join('');
+};
+
+// =============================================================
+// 9. 単語帳詳細 & ライブラリ保存 & 共有設定 & カード管理
+// =============================================================
+async function checkAndRenderSaveButton(deckId) {
+  if (!currentUser || isDeckOwner) {
+    toggleSaveDeckBtn.classList.add('hidden');
+    return;
+  }
+
+  toggleSaveDeckBtn.classList.remove('hidden');
+  const { data } = await supabaseClient
+    .from('saved_decks')
+    .select('deck_id')
+    .eq('user_id', currentUser.id)
+    .eq('deck_id', deckId)
+    .maybeSingle();
+
+  isCurrentDeckSaved = Boolean(data);
+  updateSaveButtonUI();
+}
+
+function updateSaveButtonUI() {
+  if (isCurrentDeckSaved) {
+    toggleSaveDeckBtn.textContent = '⭐ ライブラリ保存済み';
+    toggleSaveDeckBtn.className = 'border-2 border-amber-500 bg-amber-400 hover:bg-amber-500 text-slate-900 px-4 py-3 rounded-xl font-bold shadow-sm transition';
+  } else {
+    toggleSaveDeckBtn.textContent = '☆ ライブラリに保存';
+    toggleSaveDeckBtn.className = 'border-2 border-amber-400 bg-amber-50 hover:bg-amber-100 text-amber-800 px-4 py-3 rounded-xl font-bold shadow-sm transition';
+  }
+}
+
+toggleSaveDeckBtn.addEventListener('click', async () => {
+  if (!currentUser || !currentDeck || isDeckOwner) return;
+
+  if (isCurrentDeckSaved) {
+    await supabaseClient
+      .from('saved_decks')
+      .delete()
+      .eq('user_id', currentUser.id)
+      .eq('deck_id', currentDeck.id);
+    isCurrentDeckSaved = false;
+  } else {
+    await supabaseClient
+      .from('saved_decks')
+      .insert([{ user_id: currentUser.id, deck_id: currentDeck.id }]);
+    isCurrentDeckSaved = true;
+  }
+  updateSaveButtonUI();
+});
+
 async function setupAndRenderDeck(deck, autoStudyMode = null, skipPushState = false) {
   currentDeck = deck;
   isDeckOwner = currentUser && deck.user_id === currentUser.id;
@@ -336,7 +610,11 @@ async function setupAndRenderDeck(deck, autoStudyMode = null, skipPushState = fa
   detailDeckTitle.textContent = deck.title;
   detailDeckTextbook.textContent = deck.textbook_name ? `教科書: ${deck.textbook_name}` : '教科書未指定';
 
-  // オーナーかゲストかでUIの編集権限を切り替え
+  // 作成者名の取得とクリック遷移設定
+  await fetchDisplayNames([deck.user_id]);
+  detailCreatorName.textContent = profileCache[deck.user_id] || '作成者';
+  detailCreatorBtn.onclick = () => window.openCreatorPage(deck.user_id);
+
   if (isDeckOwner) {
     sharedDeckBadge.classList.add('hidden');
     shareSettingsPanel.classList.remove('hidden');
@@ -349,10 +627,10 @@ async function setupAndRenderDeck(deck, autoStudyMode = null, skipPushState = fa
     createCardContainer.classList.add('hidden');
   }
 
+  await checkAndRenderSaveButton(deck.id);
   renderCardFormFields(selectedCardType);
   await loadCardsAndStats(deck.id);
 
-  // URLに ?mode=study や ?mode=weak が付いていた場合はそのまま学習画面へ遷移
   if (autoStudyMode === 'study' && currentCards.length > 0) {
     startQuizSession(currentCards, false, true);
   } else if (autoStudyMode === 'weak' && weakCards.length > 0) {
@@ -396,7 +674,6 @@ window.openDeckByShareId = async function(shareId, autoStudyMode = null) {
   await setupAndRenderDeck(deck, autoStudyMode, true);
 };
 
-// 公開設定の変更と共有URL表示
 function updateShareLinkBox(deck) {
   if (deck.visibility === 'link' || deck.visibility === 'public') {
     shareLinkBox.classList.remove('hidden');
@@ -440,7 +717,6 @@ copyShareUrlBtn.addEventListener('click', async () => {
   }
 });
 
-// タブ切り替えで入力フォームを動的生成
 cardTypeTabs.forEach(tab => {
   tab.addEventListener('click', () => {
     selectedCardType = tab.dataset.cardType;
@@ -498,7 +774,6 @@ function renderCardFormFields(type) {
   }
 }
 
-// カード追加処理
 createCardBtn.addEventListener('click', async () => {
   if (!currentDeck || !isDeckOwner) return;
 
@@ -555,7 +830,6 @@ createCardBtn.addEventListener('click', async () => {
   }
 });
 
-// カード一覧 ＋ learning_logs から正答率と苦手問題を集計
 async function loadCardsAndStats(deckId) {
   cardsList.innerHTML = '<p class="text-slate-500 text-sm">カードと学習履歴を読み込み中...</p>';
 
@@ -585,6 +859,7 @@ async function loadCardsAndStats(deckId) {
   const { data: logs } = await supabaseClient
     .from('learning_logs')
     .select('card_id, is_correct, reviewed_at')
+    .eq('user_id', currentUser.id)
     .in('card_id', cardIds)
     .order('reviewed_at', { ascending: false });
 
@@ -689,7 +964,7 @@ window.deleteCard = async function(cardId) {
 };
 
 // =============================================================
-// 8. 学習（クイズ）モード & 4カードタイプの出題・判定ロジック
+// 10. 学習（クイズ）モード & 4カードタイプの出題・判定ロジック
 // =============================================================
 function startQuizSession(cardsToStudy, isWeakOnly, skipPushState = false) {
   if (!cardsToStudy || cardsToStudy.length === 0) {
@@ -747,7 +1022,6 @@ function renderStudyQuestion() {
   questionStartTime = Date.now();
   studyProgress.textContent = `${studyIndex + 1} / ${studyQueue.length}`;
 
-  // 1. 一問一答 (basic)
   if (card.card_type === 'basic') {
     studyCardContainer.innerHTML = `
       <div class="space-y-4">
@@ -773,7 +1047,6 @@ function renderStudyQuestion() {
       `;
     });
 
-  // 2. 並べ替え (order)
   } else if (card.card_type === 'order') {
     currentOrderSelection = [];
     const shuffledItems = [...card.content.items].sort(() => Math.random() - 0.5);
@@ -843,7 +1116,6 @@ function renderStudyQuestion() {
       );
     });
 
-  // 3. 複数要素（完答）(multi_element)
   } else if (card.card_type === 'multi_element') {
     const count = card.content.answers.length;
     studyCardContainer.innerHTML = `
@@ -879,7 +1151,6 @@ function renderStudyQuestion() {
       );
     });
 
-  // 4. 穴埋め (cloze)
   } else if (card.card_type === 'cloze') {
     const answers = [];
     let blankIndex = 0;
@@ -978,7 +1249,7 @@ window.returnToDeckDetail = function() {
 };
 
 // =============================================================
-// 9. ユーティリティ
+// 11. ユーティリティ
 // =============================================================
 function escapeHtml(str) {
   if (typeof str !== 'string') return '';
