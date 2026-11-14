@@ -142,6 +142,29 @@ async function renderDeckClassShareToggles(deckId) {
   }).join('');
 }
 
+async function renderDeckFolderToggles(deckId) {
+  const box = document.getElementById('deck-folder-share-box');
+  const toggles = document.getElementById('deck-folder-toggles');
+  if (!box || !toggles || !state.currentUser) return;
+
+  const folders = await getUserFolders();
+  if (folders.length === 0) {
+    box.classList.add('hidden');
+    return;
+  }
+  box.classList.remove('hidden');
+
+  toggles.innerHTML = folders.map(folder => {
+    const inFolder = (folder.folder_decks || []).some(fd => fd.deck_id === deckId);
+    return `
+      <button type="button" onclick="window.toggleDeckFolder('${deckId}', '${folder.id}', ${inFolder})"
+        class="text-xs px-2.5 py-1 rounded-full font-semibold border transition ${inFolder ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-slate-600 border-slate-300 hover:border-amber-400'}">
+        ${inFolder ? '✓ 📁 ' : '+ 📁 '}${escapeHtml(folder.title)}
+      </button>
+    `;
+  }).join('');
+}
+
 export function renderCardFormFields(type) {
   const container = document.getElementById('dynamic-card-fields');
   if (type === 'basic') {
@@ -464,6 +487,16 @@ export function initDeckDetailEvents() {
       await supabaseClient.from('class_decks').insert([{ class_id: classId, deck_id: deckId, added_by: state.currentUser.id }]);
     }
     await renderDeckClassShareToggles(deckId);
+  };
+
+  window.toggleDeckFolder = async function(deckId, folderId, currentlyInFolder) {
+    if (!state.currentUser) return;
+    if (currentlyInFolder) {
+      await supabaseClient.from('folder_decks').delete().eq('folder_id', folderId).eq('deck_id', deckId);
+    } else {
+      await supabaseClient.from('folder_decks').insert([{ folder_id: folderId, deck_id: deckId }]);
+    }
+    await renderDeckFolderToggles(deckId);
   };
 
   window.deleteCard = async function(cardId) {
