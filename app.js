@@ -162,6 +162,7 @@ function showView(viewName) {
     loadMyClasses();
     loadSavedDecks();
     loadPublicDecks();
+    loadLearningSummary(); // ← この1行を追加
   }
   if (viewName === 'detail') deckDetailSection.classList.remove('hidden');
   if (viewName === 'study') studySection.classList.remove('hidden');
@@ -1640,4 +1641,145 @@ function escapeHtml(str) {
     '"': '&quot;',
     "'": '&#39;'
   }[m]));
+}
+
+// =============================================================
+// 13. ホーム画面：学習履歴・連続日数（ストリーク）集計
+// =============================================================
+function toLocalDateKey(dateObj) {
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const d = String(dateObj.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function getMondayKey(dateObj) {
+  const d = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
+  const day = d.getDay(); // 0(日)〜6(土)
+  const diff = day === 0 ? -6 : 1 - day; // 月曜始まりに調整
+  d.setDate(d.getDate() + diff);
+  return toLocalDateKey(d);
+}
+
+async function loadLearningSummary() {
+  if (!currentUser) return;
+
+  const streakDaysEl = document.getElementById('stat-streak-days');
+  const streakWeeksEl = document.getElementById('stat-streak-weeks');
+  const streakBadgeEl = document.getElementById('streak-status-badge');
+  const createdDecksEl = document.getElementById('stat-created-decks');
+  const studiedDecksEl = document.getElementById('stat-studied-decks');
+  const totalLogsEl = document.getElementById('stat-total-logs');
+  const overallAccuracyEl = document.getElementById('stat-overall-accuracy');
+  const calendarEl = document.getElementById('weekly-activity-calendar');
+
+  if (!streakDaysEl) return;
+
+  // 1. 作成した単語帳数 ＆ 学習履歴（カード所属のdeck_idも同時取得）を並列取得
+  const [createdRes, logsRes] = await Promise.all([
+    supabaseClient
+      .from('decks')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', currentUser.id),
+    supabaseClient
+      .from('learning_logs')
+      .select('is_correct, reviewed_at, cards(deck_id)')
+      .eq('user_id', currentUser.id)
+      .order('reviewed_at', { ascending: false })
+      .limit(5000)
+  ]);
+
+  const createdCount = createdRes.count || 0;
+  const logs = logsRes.data || [];
+
+  createdDecksEl.textContent = createdCount;
+
+  // 2. 学習したユニークなセット数 & 正答率の集計
+  const studiedDeckIds = new Set();
+  const studiedDateSet = new Set();
+  const studiedWeekSet = new Set();
+  let correctCount = 0;
+
+  logs.forEach(log => {
+    if (log.is_correct) correctCount++;
+    if (log.cards && log.cards.deck_id) {
+      studiedDeckIds.add(log.cards.deck_id);
+    }
+    if (log.reviewed_at) {
+      const dt = new Date(log.reviewed_at);
+      studiedDateSet.add(toLocalDateKey(dt));
+      studiedWeekSet.add(getMondayKey(dt));
+    }
+  });
+
+  studiedDecksEl.textContent = studiedDeckIds.size;
+  totalLogsEl.textContent = logs.length;
+  overallAccuracyEl.textContent = logs.length > 0
+    ? `正答率 ${Math.round((correctCount / logs.length) * 100)}%`
+    : '正答率 --%';
+
+  // 3. 連続学習日数（今日学習済みなら今日から、未学習なら昨日から遡ってカウント）
+  const now = new Date();
+  const todayKey = toLocalDateKey(now);
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  const yesterdayKey = toLocalDateKey(yesterday);
+
+  let streakDays = 0;
+  let cursor = null;
+
+  if (studiedDateSet.has(todayKey)) {
+    cursor = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    streakBadgeEl.textContent = '✨ 今日の学習達成済み！';
+    streakBadgeEl.className = 'text-xs font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800';
+  } else if (studiedDateSet.has(yesterdayKey)) {
+    cursor = yesterday;
+    streakBadgeEl.textContent = '⚡ 今日1問解くと連続記録が伸びます！';
+    streakBadgeEl.className = 'text-xs font-bold px-3 py-1 rounded-full bg-amber-100 text-amber-800';
+  } else {
+    streakBadgeEl.textContent = '🌱 今日から連続記録をスタートしよう';
+    streakBadgeEl.className = 'text-xs font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-600';
+  }
+
+  while (cursor && studiedDateSet.has(toLocalDateKey(cursor))) {
+    streakDays++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  // 4. 連続学習週数（今週または先週から遡ってカウント）
+  const thisWeekKey = getMondayKey(now);
+  const lastWeekDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+  const lastWeekKey = getMondayKey(lastWeekDate);
+
+  let streakWeeks = 0;
+  let weekCursor = null;
+  if (studiedWeekSet.has(thisWeekKey)) {
+    weekCursor = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  } else if (studiedWeekSet.has(lastWeekKey)) {
+    weekCursor = lastWeekDate;
+  }
+
+  while (weekCursor && studiedWeekSet.has(getMondayKey(weekCursor))) {
+    streakWeeks++;
+    weekCursor.setDate(weekCursor.getDate() - 7);
+  }
+
+  streakDaysEl.textContent = streakDays;
+  streakWeeksEl.textContent = `（${streakWeeks}週連続学習中）`;
+
+  // 5. 直近7日間のミニカレンダー描画
+  const weekDayNames = ['日', '月', '火', '水', '木', '金', '土'];
+  const daysHtml = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    const key = toLocalDateKey(d);
+    const done = studiedDateSet.has(key);
+    const isToday = i === 0;
+    daysHtml.push(`
+      <div class="p-2 rounded-lg border ${done ? 'bg-amber-50 border-amber-300' : 'bg-slate-50 border-slate-100'} ${isToday ? 'ring-2 ring-indigo-400' : ''}">
+        <p class="text-[10px] font-bold ${isToday ? 'text-indigo-600' : 'text-slate-400'}">${d.getMonth() + 1}/${d.getDate()}(${weekDayNames[d.getDay()]})</p>
+        <div class="text-lg mt-1">${done ? '🔥' : '・'}</div>
+      </div>
+    `);
+  }
+  calendarEl.innerHTML = daysHtml.join('');
 }
