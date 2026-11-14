@@ -12,6 +12,7 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 let currentUser = null;
 let currentDisplayName = '';
 let currentDeck = null;
+let currentClass = null;
 let isDeckOwner = false;
 let isCurrentDeckSaved = false;
 let currentCards = [];
@@ -38,6 +39,7 @@ const dashboardSection = document.getElementById('dashboard-section');
 const deckDetailSection = document.getElementById('deck-detail-section');
 const studySection = document.getElementById('study-section');
 const creatorSection = document.getElementById('creator-section');
+const classDetailSection = document.getElementById('class-detail-section');
 
 const homeLogo = document.getElementById('home-logo');
 const userStatus = document.getElementById('user-status');
@@ -57,6 +59,14 @@ const decksList = document.getElementById('decks-list');
 const savedDecksList = document.getElementById('saved-decks-list');
 const publicDecksList = document.getElementById('public-decks-list');
 
+// クラス一覧・作成・参加
+const newClassName = document.getElementById('new-class-name');
+const newClassDesc = document.getElementById('new-class-desc');
+const createClassBtn = document.getElementById('create-class-btn');
+const joinClassCodeInput = document.getElementById('join-class-code-input');
+const joinClassBtn = document.getElementById('join-class-btn');
+const classesList = document.getElementById('classes-list');
+
 // 詳細・カード作成・共有画面
 const backToDashboardBtn = document.getElementById('back-to-dashboard-btn');
 const detailDeckTitle = document.getElementById('detail-deck-title');
@@ -74,6 +84,8 @@ const deckVisibilitySelect = document.getElementById('deck-visibility-select');
 const shareLinkBox = document.getElementById('share-link-box');
 const shareUrlInput = document.getElementById('share-url-input');
 const copyShareUrlBtn = document.getElementById('copy-share-url-btn');
+const deckClassShareBox = document.getElementById('deck-class-share-box');
+const deckClassToggles = document.getElementById('deck-class-toggles');
 
 const statTotalCards = document.getElementById('stat-total-cards');
 const statAccuracyRate = document.getElementById('stat-accuracy-rate');
@@ -100,15 +112,27 @@ const creatorPageName = document.getElementById('creator-page-name');
 const creatorPageSummary = document.getElementById('creator-page-summary');
 const creatorDecksList = document.getElementById('creator-decks-list');
 
+// クラス詳細画面
+const classBackBtn = document.getElementById('class-back-btn');
+const classDetailName = document.getElementById('class-detail-name');
+const classDetailDesc = document.getElementById('class-detail-desc');
+const classOwnerActions = document.getElementById('class-owner-actions');
+const classInviteCode = document.getElementById('class-invite-code');
+const classInviteUrlInput = document.getElementById('class-invite-url-input');
+const copyClassInviteBtn = document.getElementById('copy-class-invite-btn');
+const classAddDeckSelect = document.getElementById('class-add-deck-select');
+const classAddDeckBtn = document.getElementById('class-add-deck-btn');
+const classDecksCount = document.getElementById('class-decks-count');
+const classDecksList = document.getElementById('class-decks-list');
+const classMembersCount = document.getElementById('class-members-count');
+const classMembersList = document.getElementById('class-members-list');
+
 // =============================================================
 // 4. URLルーティング（リロード維持 & ブラウザ戻る対応）
 // =============================================================
 function updateUrlParams(paramsObj, replace = false) {
   const url = new URL(window.location.href);
-  url.searchParams.delete('deck');
-  url.searchParams.delete('share');
-  url.searchParams.delete('mode');
-  url.searchParams.delete('user');
+  ['deck', 'share', 'mode', 'user', 'class', 'join_class'].forEach(k => url.searchParams.delete(k));
 
   Object.entries(paramsObj).forEach(([k, v]) => {
     if (v !== null && v !== undefined && v !== '') {
@@ -129,27 +153,36 @@ function showView(viewName) {
   deckDetailSection.classList.add('hidden');
   studySection.classList.add('hidden');
   creatorSection.classList.add('hidden');
+  classDetailSection.classList.add('hidden');
 
   if (viewName === 'auth') authSection.classList.remove('hidden');
   if (viewName === 'dashboard') {
     dashboardSection.classList.remove('hidden');
     loadDecks();
+    loadMyClasses();
     loadSavedDecks();
     loadPublicDecks();
   }
   if (viewName === 'detail') deckDetailSection.classList.remove('hidden');
   if (viewName === 'study') studySection.classList.remove('hidden');
   if (viewName === 'creator') creatorSection.classList.remove('hidden');
+  if (viewName === 'class') classDetailSection.classList.remove('hidden');
 }
 
 async function routeFromCurrentUrl() {
   const params = new URLSearchParams(window.location.search);
+  const joinClassCode = params.get('join_class');
+  const classId = params.get('class');
   const creatorUserId = params.get('user');
   const shareId = params.get('share');
   const deckId = params.get('deck');
   const mode = params.get('mode');
 
-  if (creatorUserId) {
+  if (joinClassCode) {
+    await joinClassWithCode(joinClassCode);
+  } else if (classId) {
+    await window.openClassPage(classId, true);
+  } else if (creatorUserId) {
     await window.openCreatorPage(creatorUserId, true);
   } else if (shareId) {
     await window.openDeckByShareId(shareId, mode);
@@ -169,6 +202,7 @@ window.addEventListener('popstate', async () => {
 homeLogo.addEventListener('click', () => {
   if (!currentUser) return;
   currentDeck = null;
+  currentClass = null;
   updateUrlParams({});
   showView('dashboard');
 });
@@ -180,6 +214,12 @@ backToDashboardBtn.addEventListener('click', () => {
 });
 
 creatorBackBtn.addEventListener('click', () => {
+  updateUrlParams({});
+  showView('dashboard');
+});
+
+classBackBtn.addEventListener('click', () => {
+  currentClass = null;
   updateUrlParams({});
   showView('dashboard');
 });
@@ -199,7 +239,6 @@ async function initUserProfile(user) {
     currentDisplayName = data.display_name;
   } else {
     currentDisplayName = defaultName;
-    // 初回ログイン時にデフォルト表示名を自動登録
     await supabaseClient.from('profiles').upsert({
       id: user.id,
       display_name: defaultName
@@ -267,7 +306,7 @@ supabaseClient.auth.onAuthStateChange(async (event, session) => {
     currentUser = null;
     userStatus.classList.add('hidden');
     const params = new URLSearchParams(window.location.search);
-    if (params.get('share') || params.get('user')) {
+    if (params.get('share') || params.get('user') || params.get('join_class') || params.get('class')) {
       shareLoginNotice.classList.remove('hidden');
     } else {
       shareLoginNotice.classList.add('hidden');
@@ -299,7 +338,308 @@ logoutBtn.addEventListener('click', async () => {
 });
 
 // =============================================================
-// 7. 単語帳一覧（マイ単語帳・保存ライブラリ・全体公開）
+// 7. クラス（グループ）作成・参加・一覧・詳細画面
+// =============================================================
+async function getUserClasses() {
+  if (!currentUser) return [];
+  const { data: ownedClasses } = await supabaseClient
+    .from('classes')
+    .select('*')
+    .eq('owner_id', currentUser.id);
+
+  const { data: memberRows } = await supabaseClient
+    .from('class_members')
+    .select('class_id, classes(*)')
+    .eq('user_id', currentUser.id);
+
+  const map = new Map();
+  (ownedClasses || []).forEach(c => map.set(c.id, { ...c, myRole: 'owner' }));
+  (memberRows || []).forEach(r => {
+    if (r.classes && !map.has(r.classes.id)) {
+      map.set(r.classes.id, { ...r.classes, myRole: r.role || 'member' });
+    }
+  });
+  return [...map.values()].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+}
+
+async function loadMyClasses() {
+  if (!currentUser) return;
+  classesList.innerHTML = '<p class="text-gray-500 text-sm">読み込み中...</p>';
+
+  const classes = await getUserClasses();
+  if (classes.length === 0) {
+    classesList.innerHTML = '<p class="text-gray-500 text-sm">まだ参加中のクラスはありません。新しいクラスを作成するか、友達の招待リンクから参加しましょう！</p>';
+    return;
+  }
+
+  await fetchDisplayNames(classes.map(c => c.owner_id));
+
+  classesList.innerHTML = classes.map(cls => {
+    const isOwner = cls.owner_id === currentUser.id;
+    const ownerName = profileCache[cls.owner_id] || 'オーナー';
+    return `
+      <div onclick="window.openClassPage('${cls.id}')" class="bg-white p-5 rounded-xl shadow border border-indigo-100 hover:border-indigo-300 hover:shadow-md cursor-pointer transition">
+        <div class="flex justify-between items-start gap-2">
+          <div>
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs font-bold px-2 py-0.5 rounded ${isOwner ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'}">
+                ${isOwner ? '👑 オーナー' : '🏫 メンバー'}
+              </span>
+              <span class="text-xs text-slate-400">作成: ${escapeHtml(ownerName)}</span>
+            </div>
+            <h3 class="text-lg font-bold text-slate-800 mt-1.5">${escapeHtml(cls.name)}</h3>
+            ${cls.description ? `<p class="text-xs text-slate-500 mt-1 line-clamp-1">${escapeHtml(cls.description)}</p>` : ''}
+          </div>
+          <span class="text-xs text-indigo-600 font-bold shrink-0">クラスを開く →</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+createClassBtn.addEventListener('click', async () => {
+  const name = newClassName.value.trim();
+  const desc = newClassDesc.value.trim();
+  if (!name) return alert('クラス名を入力してください');
+  if (!currentUser) return;
+
+  const { data: created, error } = await supabaseClient
+    .from('classes')
+    .insert([{ name, description: desc || null, owner_id: currentUser.id }])
+    .select()
+    .single();
+
+  if (error) {
+    alert(`クラス作成エラー: ${error.message}`);
+    return;
+  }
+
+  // オーナー自身も class_members に登録
+  await supabaseClient.from('class_members').insert([
+    { class_id: created.id, user_id: currentUser.id, role: 'owner' }
+  ]);
+
+  newClassName.value = '';
+  newClassDesc.value = '';
+  await window.openClassPage(created.id);
+});
+
+async function joinClassWithCode(rawCode) {
+  const code = (rawCode || '').trim().toUpperCase();
+  if (!code) return alert('招待コードを入力してください');
+
+  const { data: joinedClassId, error } = await supabaseClient
+    .rpc('join_class_by_code', { code });
+
+  if (error || !joinedClassId) {
+    alert(`クラス参加エラー: ${error ? error.message : '招待コードが無効です'}`);
+    updateUrlParams({}, true);
+    showView('dashboard');
+    return;
+  }
+
+  joinClassCodeInput.value = '';
+  updateUrlParams({ class: joinedClassId }, true);
+  await window.openClassPage(joinedClassId, true);
+}
+
+joinClassBtn.addEventListener('click', async () => {
+  await joinClassWithCode(joinClassCodeInput.value);
+});
+
+window.openClassPage = async function(classId, skipPushState = false) {
+  const { data: cls, error } = await supabaseClient
+    .from('classes')
+    .select('*')
+    .eq('id', classId)
+    .single();
+
+  if (error || !cls) {
+    alert('クラスが見つからないか、参加権限がありません');
+    updateUrlParams({}, true);
+    showView('dashboard');
+    return;
+  }
+
+  currentClass = cls;
+  if (!skipPushState) {
+    updateUrlParams({ class: cls.id });
+  }
+
+  showView('class');
+  classDetailName.textContent = cls.name;
+  classDetailDesc.textContent = cls.description || '説明なし';
+  classInviteCode.textContent = cls.invite_code;
+
+  const inviteUrl = new URL(window.location.href);
+  inviteUrl.search = `?join_class=${cls.invite_code}`;
+  classInviteUrlInput.value = inviteUrl.toString();
+
+  const isOwner = currentUser && cls.owner_id === currentUser.id;
+  if (isOwner) {
+    classOwnerActions.innerHTML = `
+      <button type="button" onclick="window.deleteClass('${cls.id}')" class="text-xs bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold px-3 py-2 rounded-lg transition">
+        クラスを削除
+      </button>
+    `;
+  } else {
+    classOwnerActions.innerHTML = `
+      <button type="button" onclick="window.leaveClass('${cls.id}')" class="text-xs bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 font-bold px-3 py-2 rounded-lg transition">
+        クラスから退会
+      </button>
+    `;
+  }
+
+  await Promise.all([
+    loadClassDecksAndSelector(cls.id),
+    loadClassMembers(cls)
+  ]);
+};
+
+copyClassInviteBtn.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(classInviteUrlInput.value);
+    const orig = copyClassInviteBtn.textContent;
+    copyClassInviteBtn.textContent = '✓ コピー完了！';
+    setTimeout(() => { copyClassInviteBtn.textContent = orig; }, 2000);
+  } catch {
+    classInviteUrlInput.select();
+    document.execCommand('copy');
+    alert('招待URLをコピーしました！');
+  }
+});
+
+window.deleteClass = async function(classId) {
+  if (!confirm('このクラスを削除しますか？（共有されていた単語帳自体は消えません）')) return;
+  const { error } = await supabaseClient.from('classes').delete().eq('id', classId);
+  if (error) alert(`削除エラー: ${error.message}`);
+  else {
+    currentClass = null;
+    updateUrlParams({});
+    showView('dashboard');
+  }
+};
+
+window.leaveClass = async function(classId) {
+  if (!confirm('このクラスから退会しますか？')) return;
+  const { error } = await supabaseClient
+    .from('class_members')
+    .delete()
+    .eq('class_id', classId)
+    .eq('user_id', currentUser.id);
+  if (error) alert(`退会エラー: ${error.message}`);
+  else {
+    currentClass = null;
+    updateUrlParams({});
+    showView('dashboard');
+  }
+};
+
+async function loadClassDecksAndSelector(classId) {
+  classDecksList.innerHTML = '<p class="text-slate-500 text-sm">読み込み中...</p>';
+
+  const [{ data: sharedRows }, { data: myDecks }] = await Promise.all([
+    supabaseClient
+      .from('class_decks')
+      .select('deck_id, added_by, added_at, decks(*)')
+      .eq('class_id', classId)
+      .order('added_at', { ascending: false }),
+    supabaseClient
+      .from('decks')
+      .select('id, title')
+      .eq('user_id', currentUser.id)
+      .order('created_at', { ascending: false })
+  ]);
+
+  const sharedDeckIds = new Set((sharedRows || []).map(r => r.deck_id));
+  const availableMyDecks = (myDecks || []).filter(d => !sharedDeckIds.has(d.id));
+
+  classAddDeckSelect.innerHTML = availableMyDecks.length > 0
+    ? `<option value="">追加するマイ単語帳を選択...</option>` +
+      availableMyDecks.map(d => `<option value="${d.id}">${escapeHtml(d.title)}</option>`).join('')
+    : `<option value="">追加できる未共有のマイ単語帳がありません</option>`;
+
+  const validRows = (sharedRows || []).filter(r => r.decks);
+  classDecksCount.textContent = validRows.length;
+
+  if (validRows.length === 0) {
+    classDecksList.innerHTML = '<p class="text-slate-500 text-sm bg-white p-4 rounded-xl">まだこのクラスに共有された単語帳はありません。上のフォームから自分の単語帳を追加してみましょう！</p>';
+    return;
+  }
+
+  await fetchDisplayNames(validRows.map(r => r.decks.user_id));
+
+  classDecksList.innerHTML = validRows.map(row => {
+    const deck = row.decks;
+    const creatorName = profileCache[deck.user_id] || '作成者';
+    const canRemove = currentUser && (row.added_by === currentUser.id || currentClass.owner_id === currentUser.id);
+    return `
+      <div onclick="window.openDeck('${deck.id}')" class="bg-white p-5 rounded-xl shadow border border-slate-100 hover:border-indigo-300 hover:shadow-md cursor-pointer transition flex justify-between items-start gap-3">
+        <div>
+          <span class="text-xs font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700">🏫 クラス共有</span>
+          <h4 class="text-lg font-bold text-slate-800 mt-1">${escapeHtml(deck.title)}</h4>
+          <p class="text-xs text-indigo-600 font-semibold mt-0.5">${deck.textbook_name ? escapeHtml(deck.textbook_name) : '教科書未指定'}</p>
+          <button type="button" onclick="event.stopPropagation(); window.openCreatorPage('${deck.user_id}')" class="mt-2 inline-flex items-center gap-1 text-xs text-slate-600 hover:text-indigo-600 hover:underline font-medium">
+            👤 ${escapeHtml(creatorName)}
+          </button>
+        </div>
+        ${canRemove ? `<button type="button" onclick="event.stopPropagation(); window.removeDeckFromClass('${classId}', '${deck.id}')" class="text-xs bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 px-2.5 py-1 rounded font-medium transition shrink-0">解除</button>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+classAddDeckBtn.addEventListener('click', async () => {
+  if (!currentClass || !currentUser) return;
+  const deckId = classAddDeckSelect.value;
+  if (!deckId) return alert('クラスに追加する単語帳を選択してください');
+
+  const { error } = await supabaseClient.from('class_decks').insert([
+    { class_id: currentClass.id, deck_id: deckId, added_by: currentUser.id }
+  ]);
+
+  if (error) {
+    alert(`追加エラー: ${error.message}`);
+  } else {
+    await loadClassDecksAndSelector(currentClass.id);
+  }
+});
+
+window.removeDeckFromClass = async function(classId, deckId) {
+  if (!confirm('この単語帳のクラス共有を解除しますか？（単語帳自体は削除されません）')) return;
+  await supabaseClient
+    .from('class_decks')
+    .delete()
+    .eq('class_id', classId)
+    .eq('deck_id', deckId);
+  await loadClassDecksAndSelector(classId);
+};
+
+async function loadClassMembers(cls) {
+  const { data: members } = await supabaseClient
+    .from('class_members')
+    .select('user_id, role, joined_at')
+    .eq('class_id', cls.id)
+    .order('joined_at', { ascending: true });
+
+  const memberIds = [...new Set([cls.owner_id, ...(members || []).map(m => m.user_id)])];
+  await fetchDisplayNames(memberIds);
+
+  classMembersCount.textContent = memberIds.length;
+  classMembersList.innerHTML = memberIds.map(uid => {
+    const name = profileCache[uid] || 'メンバー';
+    const isOwner = uid === cls.owner_id;
+    return `
+      <button type="button" onclick="window.openCreatorPage('${uid}')" class="inline-flex items-center gap-1.5 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 px-3 py-1.5 rounded-full text-xs font-semibold text-slate-700 hover:text-indigo-700 transition">
+        <span>${isOwner ? '👑' : '👤'}</span>
+        <span>${escapeHtml(name)}</span>
+      </button>
+    `;
+  }).join('');
+}
+
+// =============================================================
+// 8. 単語帳一覧（マイ単語帳・保存ライブラリ・全体公開）
 // =============================================================
 async function loadDecks() {
   if (!currentUser) return;
@@ -475,7 +815,7 @@ window.deleteDeck = async function(deckId) {
 };
 
 // =============================================================
-// 8. クリエイターページ（特定ユーザーの単語帳一覧）
+// 9. クリエイターページ（特定ユーザーの単語帳一覧）
 // =============================================================
 window.openCreatorPage = async function(targetUserId, skipPushState = false) {
   if (!skipPushState) {
@@ -528,7 +868,6 @@ window.openCreatorPage = async function(targetUserId, skipPushState = false) {
         </div>
       `;
     } else {
-      // 非公開・リンク限定セットはタイトルとカード枚数のみ表示（中身ロック）
       return `
         <div class="bg-slate-50 p-5 rounded-xl border border-slate-200 opacity-80">
           <div class="flex justify-between items-start gap-2">
@@ -546,7 +885,7 @@ window.openCreatorPage = async function(targetUserId, skipPushState = false) {
 };
 
 // =============================================================
-// 9. 単語帳詳細 & ライブラリ保存 & 共有設定 & カード管理
+// 10. 単語帳詳細 & ライブラリ保存 & クラス共有 & カード管理
 // =============================================================
 async function checkAndRenderSaveButton(deckId) {
   if (!currentUser || isDeckOwner) {
@@ -595,6 +934,52 @@ toggleSaveDeckBtn.addEventListener('click', async () => {
   updateSaveButtonUI();
 });
 
+async function renderDeckClassShareToggles(deckId) {
+  const userClasses = await getUserClasses();
+  if (userClasses.length === 0) {
+    deckClassShareBox.classList.add('hidden');
+    return;
+  }
+
+  deckClassShareBox.classList.remove('hidden');
+  const { data: sharedRows } = await supabaseClient
+    .from('class_decks')
+    .select('class_id')
+    .eq('deck_id', deckId);
+
+  const sharedSet = new Set((sharedRows || []).map(r => r.class_id));
+
+  deckClassToggles.innerHTML = userClasses.map(cls => {
+    const isShared = sharedSet.has(cls.id);
+    return `
+      <button type="button" onclick="window.toggleDeckClassShare('${deckId}', '${cls.id}', ${isShared})"
+        class="text-xs px-2.5 py-1 rounded-full font-semibold border transition ${
+          isShared
+            ? 'bg-indigo-600 text-white border-indigo-600'
+            : 'bg-white text-slate-600 border-slate-300 hover:border-indigo-400'
+        }">
+        ${isShared ? '✓ ' : '+ '}${escapeHtml(cls.name)}
+      </button>
+    `;
+  }).join('');
+}
+
+window.toggleDeckClassShare = async function(deckId, classId, currentlyShared) {
+  if (!currentUser) return;
+  if (currentlyShared) {
+    await supabaseClient
+      .from('class_decks')
+      .delete()
+      .eq('class_id', classId)
+      .eq('deck_id', deckId);
+  } else {
+    await supabaseClient
+      .from('class_decks')
+      .insert([{ class_id: classId, deck_id: deckId, added_by: currentUser.id }]);
+  }
+  await renderDeckClassShareToggles(deckId);
+};
+
 async function setupAndRenderDeck(deck, autoStudyMode = null, skipPushState = false) {
   currentDeck = deck;
   isDeckOwner = currentUser && deck.user_id === currentUser.id;
@@ -610,7 +995,6 @@ async function setupAndRenderDeck(deck, autoStudyMode = null, skipPushState = fa
   detailDeckTitle.textContent = deck.title;
   detailDeckTextbook.textContent = deck.textbook_name ? `教科書: ${deck.textbook_name}` : '教科書未指定';
 
-  // 作成者名の取得とクリック遷移設定
   await fetchDisplayNames([deck.user_id]);
   detailCreatorName.textContent = profileCache[deck.user_id] || '作成者';
   detailCreatorBtn.onclick = () => window.openCreatorPage(deck.user_id);
@@ -621,6 +1005,7 @@ async function setupAndRenderDeck(deck, autoStudyMode = null, skipPushState = fa
     createCardContainer.classList.remove('hidden');
     deckVisibilitySelect.value = deck.visibility || 'private';
     updateShareLinkBox(deck);
+    await renderDeckClassShareToggles(deck.id);
   } else {
     sharedDeckBadge.classList.remove('hidden');
     shareSettingsPanel.classList.add('hidden');
@@ -964,7 +1349,7 @@ window.deleteCard = async function(cardId) {
 };
 
 // =============================================================
-// 10. 学習（クイズ）モード & 4カードタイプの出題・判定ロジック
+// 11. 学習（クイズ）モード & 4カードタイプの出題・判定ロジック
 // =============================================================
 function startQuizSession(cardsToStudy, isWeakOnly, skipPushState = false) {
   if (!cardsToStudy || cardsToStudy.length === 0) {
@@ -1249,7 +1634,7 @@ window.returnToDeckDetail = function() {
 };
 
 // =============================================================
-// 11. ユーティリティ
+// 12. ユーティリティ
 // =============================================================
 function escapeHtml(str) {
   if (typeof str !== 'string') return '';
