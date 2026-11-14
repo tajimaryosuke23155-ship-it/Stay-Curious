@@ -4,6 +4,7 @@ import { refreshDashboard, openCreatorPage, initDashboardEvents } from './dashbo
 import { joinClassWithCode, openClassPage, initClassEvents } from './classes.js';
 import { openDeck, openDeckByShareId, initDeckDetailEvents } from './deckDetail.js';
 import { initStudyEvents } from './study.js';
+import { openFolderPage, initFolderEvents } from './folders.js';
 
 // ルーターへ各画面の起動関数を登録
 registerRouteHandlers({
@@ -12,6 +13,7 @@ registerRouteHandlers({
   openClassPage,
   openCreatorPage,
   openDeckByShareId,
+  openFolderPage,
   openDeck
 });
 
@@ -22,3 +24,4 @@ initDashboardEvents();
 initClassEvents();
 initDeckDetailEvents();
 initStudyEvents();
+initFolderEvents();
