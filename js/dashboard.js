@@ -4,6 +4,7 @@ import { fetchDisplayNames } from './auth.js';
 import { updateUrlParams, showView } from './router.js';
 import { setupAndRenderDeck, openDeck } from './deckDetail.js';
 import { loadMyClasses } from './classes.js';
+import { loadMyFolders } from './folders.js';
 
 export async function refreshDashboard() {
   await Promise.all([
@@ -11,6 +12,7 @@ export async function refreshDashboard() {
     loadMyClasses(),
     loadSavedDecks(),
     loadPublicDecks(),
+    loadMyFolders(),
     loadLearningSummary()
   ]);
 }
