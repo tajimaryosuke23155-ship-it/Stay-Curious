@@ -66,15 +66,38 @@
 
     <!-- 3. 単語帳詳細 & カード作成・一覧画面 -->
     <section id="deck-detail-section" class="hidden space-y-6">
-      <div class="flex flex-wrap justify-between items-center gap-4 bg-white p-5 rounded-xl shadow-md">
-        <div>
-          <button id="back-to-dashboard-btn" type="button" class="text-sm text-indigo-600 hover:underline font-medium mb-1">← 単語帳一覧に戻る</button>
-          <h2 id="detail-deck-title" class="text-2xl font-bold text-slate-800"></h2>
-          <p id="detail-deck-textbook" class="text-xs text-indigo-600 font-semibold mt-1"></p>
+      <div class="bg-white p-5 rounded-xl shadow-md space-y-4">
+        <div class="flex flex-wrap justify-between items-start gap-4">
+          <div>
+            <button id="back-to-dashboard-btn" type="button" class="text-sm text-indigo-600 hover:underline font-medium mb-1">← 単語帳一覧に戻る</button>
+            <h2 id="detail-deck-title" class="text-2xl font-bold text-slate-800"></h2>
+            <p id="detail-deck-textbook" class="text-xs text-indigo-600 font-semibold mt-1"></p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button id="start-weak-study-btn" type="button" class="bg-rose-500 hover:bg-rose-600 disabled:bg-slate-200 disabled:text-slate-400 text-white px-4 py-3 rounded-xl font-bold shadow-sm transition">
+              🔥 苦手だけ復習 (<span id="weak-cards-count">0</span>)
+            </button>
+            <button id="start-study-btn" type="button" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold shadow transition">
+              ▶ 全問学習
+            </button>
+          </div>
         </div>
-        <button id="start-study-btn" type="button" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-bold shadow transition">
-          ▶ 学習スタート
-        </button>
+
+        <!-- 学習成績サマリー -->
+        <div class="grid grid-cols-3 gap-3 pt-3 border-t border-slate-100 text-center">
+          <div class="bg-slate-50 p-2.5 rounded-lg">
+            <p class="text-xs text-slate-500">登録カード</p>
+            <p id="stat-total-cards" class="text-lg font-bold text-slate-800">0枚</p>
+          </div>
+          <div class="bg-slate-50 p-2.5 rounded-lg">
+            <p class="text-xs text-slate-500">総合正答率</p>
+            <p id="stat-accuracy-rate" class="text-lg font-bold text-indigo-600">--%</p>
+          </div>
+          <div class="bg-slate-50 p-2.5 rounded-lg">
+            <p class="text-xs text-slate-500">要復習（苦手）</p>
+            <p id="stat-weak-cards" class="text-lg font-bold text-rose-600">0枚</p>
+          </div>
+        </div>
       </div>
 
       <!-- カード新規作成フォーム -->
@@ -126,8 +149,11 @@
     <section id="study-section" class="hidden space-y-6">
       <div class="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm">
         <button id="exit-study-btn" type="button" class="text-sm text-slate-600 hover:text-slate-900 font-medium">✕ 学習を終了する</button>
-        <div class="text-sm font-bold text-indigo-600">
-          問題 <span id="study-progress">1 / 1</span>
+        <div class="flex items-center gap-2">
+          <span id="study-mode-badge" class="text-xs font-bold px-2.5 py-0.5 rounded bg-indigo-100 text-indigo-700">全問モード</span>
+          <span class="text-sm font-bold text-indigo-600">
+            問題 <span id="study-progress">1 / 1</span>
+          </span>
         </div>
       </div>
 
