@@ -1,86 +1,97 @@
 import { state } from './state.js';
 
-const viewMap = {
-  auth: document.getElementById('auth-section'),
-  dashboard: document.getElementById('dashboard-section'),
-  detail: document.getElementById('deck-detail-section'),
-  study: document.getElementById('study-section'),
-  creator: document.getElementById('creator-section'),
-  class: document.getElementById('class-detail-section'),
-  folder: document.getElementById('folder-detail-section')
+let routeHandlers = {
+  openDeck: null,
+  openDeckByShareId: null,
+  openCreatorPage: null,
+  openClassPage: null,
+  joinClassByCode: null,
+  openFolderPage: null
 };
 
-// 循環参照を避けるための画面ハンドラ登録
-const handlers = {};
-export function registerRouteHandlers(newHandlers) {
-  Object.assign(handlers, newHandlers);
+export function registerRouteHandlers(handlers) {
+  routeHandlers = { ...routeHandlers, ...handlers };
+}
+
+export function getInitialRouteFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    deckId: params.get('deck'),
+    shareId: params.get('share'),
+    mode: params.get('mode'),
+    creatorId: params.get('creator'),
+    classId: params.get('class'),
+    joinCode: params.get('join'),
+    folderId: params.get('folder')
+  };
 }
 
 export function updateUrlParams(paramsObj, replace = false) {
   const url = new URL(window.location.href);
-  ['deck', 'share', 'mode', 'user', 'class', 'join_class','folder'].forEach(k => url.searchParams.delete(k));
-
-  Object.entries(paramsObj).forEach(([k, v]) => {
-    if (v !== null && v !== undefined && v !== '') {
-      url.searchParams.set(k, v);
+  url.search = '';
+  Object.entries(paramsObj).forEach(([key, val]) => {
+    if (val !== null && val !== undefined && val !== '') {
+      url.searchParams.set(key, val);
     }
   });
-
-  if (replace) {
-    window.history.replaceState({}, '', url);
-  } else {
-    window.history.pushState({}, '', url);
-  }
+  if (replace) window.history.replaceState({}, '', url);
+  else window.history.pushState({}, '', url);
 }
 
 export function showView(viewName) {
-  Object.values(viewMap).forEach(el => el && el.classList.add('hidden'));
-  if (viewMap[viewName]) {
-    viewMap[viewName].classList.remove('hidden');
-  }
-  if (viewName === 'dashboard' && handlers.onShowDashboard) {
-    handlers.onShowDashboard();
-  }
-}
+  const sections = [
+    'auth-section',
+    'dashboard-section',
+    'deck-detail-section',
+    'study-section',
+    'creator-section',
+    'class-detail-section',
+    'folder-detail-section'
+  ];
+  sections.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
 
-export async function routeFromCurrentUrl() {
-  const params = new URLSearchParams(window.location.search);
-  const joinClassCode = params.get('join_class');
-  const classId = params.get('class');
-  const creatorUserId = params.get('user');
-  const shareId = params.get('share');
-  const deckId = params.get('deck');
-  const mode = params.get('mode');
-  const folderId = params.get('folder');
-
-  if (joinClassCode && handlers.joinClassWithCode) {
-    await handlers.joinClassWithCode(joinClassCode);
-  } else if (classId && handlers.openClassPage) {
-    await handlers.openClassPage(classId, true);
-  } else if (creatorUserId && handlers.openCreatorPage) {
-    await handlers.openCreatorPage(creatorUserId, true);
-  } else if (shareId && handlers.openDeckByShareId) {
-    await handlers.openDeckByShareId(shareId, mode);
-  } else if (deckId && handlers.openDeck) {
-    await handlers.openDeck(deckId, mode, true);
-  } else if (folderId && handlers.openFolderPage) {
-    await handlers.openFolderPage(folderId, true); 
-  } else {
-    showView('dashboard');
-  }
+  const targetMap = {
+    auth: 'auth-section',
+    dashboard: 'dashboard-section',
+    detail: 'deck-detail-section',
+    study: 'study-section',
+    creator: 'creator-section',
+    class: 'class-detail-section',
+    folder: 'folder-detail-section'
+  };
+  const targetEl = document.getElementById(targetMap[viewName]);
+  if (targetEl) targetEl.classList.remove('hidden');
 }
 
 export function initRouterEvents() {
   window.addEventListener('popstate', async () => {
-    if (state.currentUser) {
-      await routeFromCurrentUrl();
+    if (!state.currentUser) return;
+    const route = getInitialRouteFromUrl();
+    if (route.joinCode && routeHandlers.joinClassByCode) {
+      await routeHandlers.joinClassByCode(route.joinCode, true);
+    } else if (route.classId && routeHandlers.openClassPage) {
+      await routeHandlers.openClassPage(route.classId, true);
+    } else if (route.folderId && routeHandlers.openFolderPage) {
+      await routeHandlers.openFolderPage(route.folderId, true);
+    } else if (route.shareId && routeHandlers.openDeckByShareId) {
+      await routeHandlers.openDeckByShareId(route.shareId, route.mode);
+    } else if (route.deckId && routeHandlers.openDeck) {
+      await routeHandlers.openDeck(route.deckId, route.mode, true);
+    } else if (route.creatorId && routeHandlers.openCreatorPage) {
+      await routeHandlers.openCreatorPage(route.creatorId, true);
+    } else {
+      showView('dashboard');
     }
   });
 
-  const goHome = () => {
+  const goHome = async () => {
     if (!state.currentUser) return;
     state.currentDeck = null;
     state.currentClass = null;
+    state.currentFolder = null;
     updateUrlParams({});
     showView('dashboard');
   };
