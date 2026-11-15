@@ -537,32 +537,6 @@
   </script>
 
   <!-- スクリプト参照（ES Modules） -->
-  <script type="module">
-  const allFiles = [
-    './js/config.js',
-    './js/state.js',
-    './js/router.js',
-    './js/auth.js',
-    './js/dashboard.js',
-    './js/deckDetail.js',
-    './js/study.js',
-    './js/creator.js',
-    './js/classes.js',
-    './js/folders.js',
-    './js/studyOptions.js',
-    './js/main.js'
-  ];
-  (async () => {
-    for (const f of allFiles) {
-      try {
-        await import(f + '?t=' + Date.now());
-      } catch (e) {
-        alert('❌ 止まったファイル: ' + f + '\nエラー詳細: ' + e.message);
-        return;
-      }
-    }
-    alert('✅ 全ファイル読み込み成功！');
-  })();
-</script>
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>
