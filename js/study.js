@@ -4,6 +4,7 @@ import { updateUrlParams, showView } from './router.js';
 import { loadCardsAndStats } from './deckDetail.js';
 import { loadFolderDecksAndSelector } from './folders.js';
 import { prepareCardsForStudy, renderStudyResultScreen } from './studyOptions.js';
+import { mountInteractiveFlashcard, cleanupFlashcardGestures } from './flashcardGesture.js';
 
 function shuffleArray(array) {
   const arr = [...array];
@@ -31,11 +32,14 @@ export function startQuizSession(cardsList, config = {}) {
 
   if (!cardsList || cardsList.length === 0) return;
 
+  cleanupFlashcardGestures();
+
   state.studyContext = context;
   state.isWeakReviewMode = isWeakMode;
   state.studyModeLabel = modeLabel;
   state.studyQueue = prepareCardsForStudy(cardsList, state.studyOptions);
   state.currentStudyIndex = 0;
+  state.studyHistory = [];
   state.studySessionStats = {
     correctCount: 0,
     wrongCards: []
@@ -74,15 +78,29 @@ export async function recordLearningLog(cardId, isCorrect) {
 function renderCardStarButton(cardId) {
   const isStarred = state.starredCardIds.has(cardId);
   return `
-    <button type="button" data-star-card-id="${cardId}" onclick="window.handleToggleStar('${cardId}')"
-      class="text-2xl leading-none p-1 rounded-lg transition ${isStarred ? 'text-amber-400 hover:text-amber-500' : 'text-slate-300 hover:text-amber-400'}"
+    <button type="button" data-no-flip data-star-card-id="${cardId}" onclick="window.handleToggleStar('${cardId}')"
+      class="text-2xl leading-none p-1.5 rounded-lg transition ${isStarred ? 'text-amber-400 hover:text-amber-500' : 'text-slate-300 hover:text-amber-400'}"
       title="${isStarred ? '星マークを外す' : '星マークをつける'}">
       ${isStarred ? '★' : '☆'}
     </button>
   `;
 }
 
+function undoLastFlashcard() {
+  if (!state.studyHistory || state.studyHistory.length === 0) return;
+  const last = state.studyHistory.pop();
+  if (last.wasCorrect) {
+    state.studySessionStats.correctCount = Math.max(0, state.studySessionStats.correctCount - 1);
+  } else {
+    state.studySessionStats.wrongCards.pop();
+  }
+  state.currentStudyIndex = Math.max(0, state.currentStudyIndex - 1);
+  renderCurrentQuestion();
+}
+
 export function renderCurrentQuestion() {
+  cleanupFlashcardGestures();
+
   const container = document.getElementById('study-card-container');
   const total = state.studyQueue.length;
 
@@ -137,44 +155,81 @@ export function renderCurrentQuestion() {
   `;
 
   if (card.card_type === 'basic') {
+    const canUndo = state.studyHistory && state.studyHistory.length > 0;
+
     container.innerHTML = `
       <div>
         ${headerBar}
-        <p class="text-xs font-bold text-indigo-600 mb-2">一問一答</p>
-        <p class="text-xl md:text-2xl font-bold text-slate-800 whitespace-pre-wrap">${escapeHtml(card.content.front)}</p>
-        <div id="basic-answer-area" class="hidden mt-6 pt-6 border-t border-slate-100">
-          <p class="text-xs font-bold text-emerald-600 mb-1">答え</p>
-          <p class="text-lg md:text-xl font-bold text-slate-700 whitespace-pre-wrap">${escapeHtml(card.content.back)}</p>
-        </div>
+        <div id="flashcard-gesture-mount"></div>
       </div>
-      <div class="mt-8">
-        <button id="show-basic-answer-btn" type="button" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition">答えを表示する</button>
-        <div id="basic-judge-btns" class="hidden grid grid-cols-2 gap-3">
-          <button id="judge-wrong-btn" type="button" class="bg-rose-500 hover:bg-rose-600 text-white font-bold py-3 rounded-xl transition">× まだ・不正解</button>
-          <button id="judge-correct-btn" type="button" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition">○ 覚えた・正解</button>
+      <div class="mt-6 max-w-xl mx-auto">
+        <div class="grid grid-cols-2 gap-3">
+          <button id="judge-wrong-btn" type="button" class="bg-rose-500 hover:bg-rose-600 active:scale-[0.98] text-white font-bold py-3.5 rounded-xl shadow-sm transition flex items-center justify-center gap-1.5">
+            <span>× もう一度</span>
+            <span class="text-xs opacity-75 font-mono">(←)</span>
+          </button>
+          <button id="judge-correct-btn" type="button" class="bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-bold py-3.5 rounded-xl shadow-sm transition flex items-center justify-center gap-1.5">
+            <span>○ 覚えた</span>
+            <span class="text-xs opacity-75 font-mono">(→)</span>
+          </button>
         </div>
+        ${canUndo ? `
+          <div class="mt-3 text-center">
+            <button id="flashcard-undo-btn" type="button" class="text-xs text-slate-400 hover:text-slate-600 underline transition">
+              ↺ 1つ前のカードに戻る (Z)
+            </button>
+          </div>
+        ` : ''}
       </div>
     `;
 
-    document.getElementById('show-basic-answer-btn').addEventListener('click', () => {
-      document.getElementById('basic-answer-area').classList.remove('hidden');
-      document.getElementById('show-basic-answer-btn').classList.add('hidden');
-      document.getElementById('basic-judge-btns').classList.remove('hidden');
-    });
-
-    document.getElementById('judge-wrong-btn').addEventListener('click', async () => {
-      state.studySessionStats.wrongCards.push(card);
-      await recordLearningLog(card.id, false);
-      state.currentStudyIndex++;
-      renderCurrentQuestion();
-    });
-
-    document.getElementById('judge-correct-btn').addEventListener('click', async () => {
+    const handleKnow = async () => {
       state.studySessionStats.correctCount++;
+      state.studyHistory.push({ card, wasCorrect: true });
       await recordLearningLog(card.id, true);
       state.currentStudyIndex++;
       renderCurrentQuestion();
+    };
+
+    const handleDontKnow = async () => {
+      state.studySessionStats.wrongCards.push(card);
+      state.studyHistory.push({ card, wasCorrect: false });
+      await recordLearningLog(card.id, false);
+      state.currentStudyIndex++;
+      renderCurrentQuestion();
+    };
+
+    const mountEl = document.getElementById('flashcard-gesture-mount');
+    const gestureCtrl = mountInteractiveFlashcard(mountEl, {
+      frontHtml: `
+        <span class="text-xs font-bold text-indigo-600 uppercase tracking-wider mb-3">QUESTION</span>
+        <p class="text-2xl md:text-3xl font-bold text-slate-800 text-center whitespace-pre-wrap leading-snug">${escapeHtml(card.content.front)}</p>
+      `,
+      backHtml: `
+        <span class="text-xs font-bold text-emerald-600 uppercase tracking-wider mb-3">ANSWER</span>
+        <p class="text-xl md:text-2xl font-bold text-slate-800 text-center whitespace-pre-wrap leading-snug">${escapeHtml(card.content.back)}</p>
+      `,
+      onKnow: handleKnow,
+      onDontKnow: handleDontKnow,
+      onUndo: canUndo ? undoLastFlashcard : null
     });
+
+    // 下部のボタンからもスワイプアニメーション付きで判定できるように連動
+    document.getElementById('judge-wrong-btn').addEventListener('click', () => {
+      gestureCtrl.swipeLeft();
+    });
+
+    document.getElementById('judge-correct-btn').addEventListener('click', () => {
+      gestureCtrl.swipeRight();
+    });
+
+    const undoBtn = document.getElementById('flashcard-undo-btn');
+    if (undoBtn) {
+      undoBtn.addEventListener('click', () => {
+        cleanupFlashcardGestures();
+        undoLastFlashcard();
+      });
+    }
 
   } else if (card.card_type === 'order') {
     const shuffled = shuffleArray(card.content.items);
@@ -374,6 +429,8 @@ export function renderCurrentQuestion() {
 }
 
 export async function exitStudyToOrigin() {
+  cleanupFlashcardGestures();
+
   if (state.studyContext === 'folder' && state.currentFolder) {
     updateUrlParams({ folder: state.currentFolder.id });
     showView('folder');
