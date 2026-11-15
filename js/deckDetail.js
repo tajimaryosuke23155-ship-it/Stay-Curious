@@ -5,6 +5,7 @@ import { updateUrlParams, showView } from './router.js';
 import { getUserClasses } from './classes.js';
 import { startQuizSession } from './study.js';
 import { getUserFolders } from './folders.js';
+import { loadUserStarredCards, updateDeckStarCountUI } from './studyOptions.js';
 
 export async function openDeck(deckId, autoStudyMode = null, skipPushState = false) {
   const { data: deck, error } = await supabaseClient.from('decks').select('*').eq('id', deckId).single();
@@ -74,9 +75,9 @@ export async function setupAndRenderDeck(deck, autoStudyMode = null, skipPushSta
   await loadCardsAndStats(deck.id);
 
   if (autoStudyMode === 'study' && state.currentCards.length > 0) {
-    startQuizSession(state.currentCards, false, true);
+    startQuizSession(state.currentCards, { isWeakMode: false, modeLabel: '全問学習', context: 'deck', skipPushState: true });
   } else if (autoStudyMode === 'weak' && state.weakCards.length > 0) {
-    startQuizSession(state.weakCards, true, true);
+    startQuizSession(state.weakCards, { isWeakMode: true, modeLabel: '🔥 苦手だけ復習', context: 'deck', skipPushState: true });
   } else {
     showView('detail');
   }
@@ -186,9 +187,7 @@ export function renderCardFormFields(type) {
       </div>
       <div>
         <label class="block text-sm font-medium mb-1">正しい順番の要素（1行に1つずつ、上から正解順に入力）</label>
-        <textarea id="input-order-items" rows="4" class="w-full border rounded p-2" placeholder="大化の改新
-平城京遷都
-平安京遷都"></textarea>
+        <textarea id="input-order-items" rows="4" class="w-full border rounded p-2" placeholder="大化の改新&#10;平城京遷都&#10;平安京遷都"></textarea>
       </div>
     `;
   } else if (type === 'multi_element') {
@@ -199,9 +198,7 @@ export function renderCardFormFields(type) {
       </div>
       <div>
         <label class="block text-sm font-medium mb-1">正解となる要素（1行に1つずつ入力・順不同で完答判定）</label>
-        <textarea id="input-multi-answers" rows="4" class="w-full border rounded p-2" placeholder="国民主権
-基本的人権の尊重
-平和主義"></textarea>
+        <textarea id="input-multi-answers" rows="4" class="w-full border rounded p-2" placeholder="国民主権&#10;基本的人権の尊重&#10;平和主義"></textarea>
       </div>
     `;
   } else if (type === 'cloze') {
@@ -218,6 +215,8 @@ export async function loadCardsAndStats(deckId) {
   const cardsListEl = document.getElementById('cards-list');
   cardsListEl.innerHTML = '<p class="text-slate-500 text-sm">カードと学習履歴を読み込み中...</p>';
 
+  await loadUserStarredCards();
+
   const { data: cards, error } = await supabaseClient.from('cards').select('*').eq('deck_id', deckId).order('created_at', { ascending: true });
   if (error) {
     cardsListEl.innerHTML = `<p class="text-rose-500 text-sm">読み込みエラー: ${escapeHtml(error.message)}</p>`;
@@ -227,6 +226,7 @@ export async function loadCardsAndStats(deckId) {
   state.currentCards = cards || [];
   document.getElementById('cards-count').textContent = state.currentCards.length;
   document.getElementById('stat-total-cards').textContent = `${state.currentCards.length}枚`;
+  updateDeckStarCountUI();
 
   if (state.currentCards.length === 0) {
     state.weakCards = [];
@@ -274,6 +274,7 @@ export async function loadCardsAndStats(deckId) {
     const badge = typeBadgeMap[card.card_type] || { label: card.card_type, color: 'bg-slate-100 text-slate-700' };
     const st = statsByCard[card.id];
     const isWeak = state.weakCards.some(w => w.id === card.id);
+    const isStarred = state.starredCardIds.has(card.id);
 
     let accuracyHtml = '<span class="text-xs text-slate-400">未学習</span>';
     if (st && st.attempts > 0) {
@@ -298,7 +299,7 @@ export async function loadCardsAndStats(deckId) {
 
     return `
       <div id="card-item-${card.id}" class="bg-white p-4 rounded-xl shadow-sm border ${isWeak ? 'border-rose-200' : 'border-slate-100'} space-y-3">
-        <div class="flex justify-between items-start gap-4">
+        <div class="flex justify-between items-start gap-3">
           <div class="space-y-1 flex-1">
             <div class="flex flex-wrap items-center gap-2">
               <span class="text-xs font-semibold px-2 py-0.5 rounded ${badge.color}">${badge.label}</span>
@@ -308,12 +309,17 @@ export async function loadCardsAndStats(deckId) {
             </div>
             <div class="pt-1">${summaryHtml}</div>
           </div>
-          ${state.isDeckOwner ? `
-            <div class="flex gap-1.5 shrink-0">
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button type="button" data-star-card-id="${card.id}" onclick="window.handleToggleStar('${card.id}')"
+              class="text-xl leading-none p-1 rounded-lg transition ${isStarred ? 'text-amber-400 hover:text-amber-500' : 'text-slate-300 hover:text-amber-400'}"
+              title="${isStarred ? '星マークを外す' : '星マークをつける'}">
+              ${isStarred ? '★' : '☆'}
+            </button>
+            ${state.isDeckOwner ? `
               <button type="button" onclick="window.openEditCard('${card.id}')" class="text-xs bg-slate-100 text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 px-2.5 py-1 rounded font-medium transition">✎ 編集</button>
               <button type="button" onclick="window.deleteCard('${card.id}')" class="text-xs text-rose-500 hover:bg-rose-50 px-2.5 py-1 rounded font-medium transition">削除</button>
-            </div>
-          ` : ''}
+            ` : ''}
+          </div>
         </div>
         <div id="card-edit-form-${card.id}" class="hidden pt-3 border-t border-slate-100 bg-slate-50 p-3.5 rounded-lg space-y-2.5"></div>
       </div>
