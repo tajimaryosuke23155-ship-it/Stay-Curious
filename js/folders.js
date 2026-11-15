@@ -2,6 +2,8 @@ import { supabaseClient, escapeHtml } from './config.js';
 import { state } from './state.js';
 import { fetchDisplayNames } from './auth.js';
 import { updateUrlParams, showView } from './router.js';
+import { startQuizSession } from './study.js';
+import { loadUserStarredCards } from './studyOptions.js';
 
 export async function getUserFolders() {
   if (!state.currentUser) return [];
@@ -67,12 +69,11 @@ export async function openFolderPage(folderId, skipPushState = false) {
   await loadFolderDecksAndSelector(folder.id);
 }
 
-async function loadFolderDecksAndSelector(folderId) {
+export async function loadFolderDecksAndSelector(folderId) {
   const listEl = document.getElementById('folder-decks-list');
   const selectEl = document.getElementById('folder-add-deck-select');
   listEl.innerHTML = '<p class="text-slate-500 text-sm">読み込み中...</p>';
 
-  // フォルダ内セット、自分の作成セット、ライブラリ保存済みセットを並列取得
   const [
     { data: folderRows },
     { data: myDecks },
@@ -85,7 +86,6 @@ async function loadFolderDecksAndSelector(folderId) {
 
   const inFolderIds = new Set((folderRows || []).map(r => r.deck_id));
 
-  // セレクター候補：マイ単語帳 ＋ 保存済みライブラリ（すでにフォルダ内にあるものを除外）
   const candidateMap = new Map();
   (myDecks || []).forEach(d => {
     if (!inFolderIds.has(d.id)) candidateMap.set(d.id, { ...d, source: 'マイ単語帳' });
@@ -104,6 +104,9 @@ async function loadFolderDecksAndSelector(folderId) {
 
   const validRows = (folderRows || []).filter(r => r.decks);
   document.getElementById('folder-decks-count').textContent = validRows.length;
+
+  // フォルダ横断学習用カードと成績を集計
+  await loadFolderStudyStats(validRows.map(r => r.decks.id));
 
   if (validRows.length === 0) {
     listEl.innerHTML = '<p class="text-slate-500 text-sm bg-white p-4 rounded-xl">このフォルダにはまだセットが入っていません。上のプルダウンからマイ単語帳や保存したライブラリを追加しましょう！</p>';
@@ -132,6 +135,74 @@ async function loadFolderDecksAndSelector(folderId) {
       </div>
     `;
   }).join('');
+}
+
+async function loadFolderStudyStats(deckIds) {
+  await loadUserStarredCards();
+
+  if (!deckIds || deckIds.length === 0) {
+    state.folderAllCards = [];
+    state.folderWeakCards = [];
+    updateFolderStudyButtonsUI(0, 0, 0);
+    return;
+  }
+
+  const { data: cards } = await supabaseClient
+    .from('cards')
+    .select('*')
+    .in('deck_id', deckIds)
+    .order('created_at', { ascending: true });
+
+  state.folderAllCards = cards || [];
+
+  if (state.folderAllCards.length === 0) {
+    state.folderWeakCards = [];
+    updateFolderStudyButtonsUI(0, 0, 0);
+    return;
+  }
+
+  const cardIds = state.folderAllCards.map(c => c.id);
+  const { data: logs } = await supabaseClient
+    .from('learning_logs')
+    .select('card_id, is_correct, reviewed_at')
+    .eq('user_id', state.currentUser.id)
+    .in('card_id', cardIds)
+    .order('reviewed_at', { ascending: false });
+
+  const statsByCard = {};
+  (logs || []).forEach(log => {
+    if (!statsByCard[log.card_id]) statsByCard[log.card_id] = { attempts: 0, correct: 0, lastResult: log.is_correct };
+    statsByCard[log.card_id].attempts++;
+    if (log.is_correct) statsByCard[log.card_id].correct++;
+  });
+
+  state.folderWeakCards = state.folderAllCards.filter(card => {
+    const st = statsByCard[card.id];
+    if (!st || st.attempts === 0) return false;
+    return st.lastResult === false || (st.correct / st.attempts) < 0.7;
+  });
+
+  const starredCount = state.folderAllCards.filter(c => state.starredCardIds.has(c.id)).length;
+  updateFolderStudyButtonsUI(state.folderAllCards.length, state.folderWeakCards.length, starredCount);
+}
+
+function updateFolderStudyButtonsUI(totalCount, weakCount, starredCount) {
+  const allBtn = document.getElementById('folder-start-all-btn');
+  const weakBtn = document.getElementById('folder-start-weak-btn');
+  const starBtn = document.getElementById('folder-start-starred-btn');
+
+  if (allBtn) {
+    document.getElementById('folder-total-cards-count').textContent = totalCount;
+    allBtn.disabled = totalCount === 0;
+  }
+  if (weakBtn) {
+    document.getElementById('folder-weak-cards-count').textContent = weakCount;
+    weakBtn.disabled = weakCount === 0;
+  }
+  if (starBtn) {
+    document.getElementById('folder-starred-cards-count').textContent = starredCount;
+    starBtn.disabled = starredCount === 0;
+  }
 }
 
 export function initFolderEvents() {
@@ -171,6 +242,50 @@ export function initFolderEvents() {
     if (error) alert(`追加エラー: ${error.message}`);
     else await loadFolderDecksAndSelector(state.currentFolder.id);
   });
+
+  // フォルダ横断学習ボタン（全問 / 苦手 / 星つき）
+  document.getElementById('folder-start-all-btn').addEventListener('click', () => {
+    startQuizSession(state.folderAllCards, {
+      isWeakMode: false,
+      modeLabel: `📁 ${state.currentFolder.title}（全問）`,
+      context: 'folder'
+    });
+  });
+
+  document.getElementById('folder-start-weak-btn').addEventListener('click', () => {
+    startQuizSession(state.folderWeakCards, {
+      isWeakMode: true,
+      modeLabel: `📁 ${state.currentFolder.title}（🔥 苦手）`,
+      context: 'folder'
+    });
+  });
+
+  document.getElementById('folder-start-starred-btn').addEventListener('click', () => {
+    const starred = state.folderAllCards.filter(c => state.starredCardIds.has(c.id));
+    startQuizSession(starred, {
+      isWeakMode: false,
+      modeLabel: `📁 ${state.currentFolder.title}（⭐ 星つき）`,
+      context: 'folder'
+    });
+  });
+
+  // フォルダの学習設定トグル（シャッフル / 表裏反転）
+  const folderShuffleChk = document.getElementById('folder-opt-shuffle');
+  const folderReverseChk = document.getElementById('folder-opt-reverse');
+  if (folderShuffleChk) {
+    folderShuffleChk.addEventListener('change', (e) => {
+      state.studyOptions.shuffle = e.target.checked;
+      const deckShuffle = document.getElementById('deck-opt-shuffle');
+      if (deckShuffle) deckShuffle.checked = e.target.checked;
+    });
+  }
+  if (folderReverseChk) {
+    folderReverseChk.addEventListener('change', (e) => {
+      state.studyOptions.reverse = e.target.checked;
+      const deckReverse = document.getElementById('deck-opt-reverse');
+      if (deckReverse) deckReverse.checked = e.target.checked;
+    });
+  }
 
   document.getElementById('edit-folder-btn').addEventListener('click', async () => {
     if (!state.currentFolder) return;
