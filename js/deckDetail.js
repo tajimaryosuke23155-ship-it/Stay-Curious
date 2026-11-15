@@ -486,6 +486,9 @@ export function initDeckDetailEvents() {
     }
   });
 
+  // スプレッドシート / Excel / ドキュメントの一括読み込み＆書き出し初期化
+  initImportExportEvents(loadCardsAndStats);
+
   // グローバル公開関数（HTML onclick用）
   window.openDeck = openDeck;
 
