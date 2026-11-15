@@ -1,13 +1,28 @@
 export const state = {
   currentUser: null,
-  currentDisplayName: '',
   currentDeck: null,
-  currentClass: null,
-  currentFolder: null,
   isDeckOwner: false,
   isCurrentDeckSaved: false,
+  selectedCardType: 'basic',
   currentCards: [],
   weakCards: [],
-  selectedCardType: 'basic',
-  profileCache: {}
+  starredCardIds: new Set(),
+  studyOptions: {
+    shuffle: false,
+    reverse: false
+  },
+  studyContext: 'deck', // 'deck' または 'folder'
+  studyQueue: [],
+  currentStudyIndex: 0,
+  isWeakReviewMode: false,
+  studyModeLabel: '全問学習',
+  studySessionStats: {
+    correctCount: 0,
+    wrongCards: []
+  },
+  profileCache: {},
+  currentClass: null,
+  currentFolder: null,
+  folderAllCards: [],
+  folderWeakCards: []
 };
