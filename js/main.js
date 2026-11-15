@@ -1,27 +1,30 @@
 import { registerRouteHandlers, initRouterEvents } from './router.js';
-import { initAuthEvents } from './auth.js';
-import { refreshDashboard, openCreatorPage, initDashboardEvents } from './dashboard.js';
-import { joinClassWithCode, openClassPage, initClassEvents } from './classes.js';
+import { initAuthEvents, initAuthSession } from './auth.js';
+import { initDashboardEvents } from './dashboard.js';
 import { openDeck, openDeckByShareId, initDeckDetailEvents } from './deckDetail.js';
 import { initStudyEvents } from './study.js';
+import { openCreatorPage, initCreatorEvents } from './creator.js';
+import { openClassPage, joinClassByCode, initClassEvents } from './classes.js';
 import { openFolderPage, initFolderEvents } from './folders.js';
+import { initStudyOptionEvents } from './studyOptions.js';
 
-// ルーターへ各画面の起動関数を登録
 registerRouteHandlers({
-  onShowDashboard: refreshDashboard,
-  joinClassWithCode,
-  openClassPage,
-  openCreatorPage,
+  openDeck,
   openDeckByShareId,
-  openFolderPage,
-  openDeck
+  openCreatorPage,
+  openClassPage,
+  joinClassByCode,
+  openFolderPage
 });
 
-// 各モジュールのイベントリスナーを初期化
 initRouterEvents();
 initAuthEvents();
 initDashboardEvents();
-initClassEvents();
 initDeckDetailEvents();
 initStudyEvents();
+initCreatorEvents();
+initClassEvents();
 initFolderEvents();
+initStudyOptionEvents();
+
+initAuthSession();
