@@ -537,6 +537,10 @@
   </script>
 
   <!-- スクリプト参照（ES Modules） -->
-  <script type="module" src="js/main.js"></script>
+  <script type="module">
+  import('./js/main.js').catch(err => {
+    alert('モジュール読み込みエラー:\n' + err.message + '\n' + (err.stack || ''));
+  });
+</script>
 </body>
 </html>
