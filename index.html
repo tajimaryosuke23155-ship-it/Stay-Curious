@@ -12,7 +12,7 @@
   /* 3Dカードフリップ用スタイル */
   .fc-scene {
     perspective: 1200px;
-    touch-action: pan-y; /* 縦スクロールは許可しつつ横スワイプを滑らかに取得 */
+    touch-action: none; /* 斜め上・斜め下のスワイプも途中で途切れず滑らかに追従させる */
     user-select: none;
     -webkit-user-select: none;
   }
