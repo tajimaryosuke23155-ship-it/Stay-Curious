@@ -237,13 +237,29 @@
             <button id="toggle-save-deck-btn" type="button" class="hidden border-2 border-amber-400 bg-amber-50 hover:bg-amber-100 text-amber-800 px-4 py-3 rounded-xl font-bold shadow-sm transition">
               ☆ ライブラリに保存
             </button>
-            <button id="start-weak-study-btn" type="button" class="bg-rose-500 hover:bg-rose-600 disabled:bg-slate-200 disabled:text-slate-400 text-white px-4 py-3 rounded-xl font-bold shadow-sm transition">
-              🔥 苦手だけ復習 (<span id="weak-cards-count">0</span>)
+            <button id="start-starred-study-btn" type="button" disabled class="bg-amber-500 hover:bg-amber-600 disabled:bg-slate-200 disabled:text-slate-400 text-white px-4 py-3 rounded-xl font-bold shadow-sm transition">
+              ⭐ 星つきだけ (<span id="starred-cards-count">0</span>)
+            </button>
+            <button id="start-weak-study-btn" type="button" disabled class="bg-rose-500 hover:bg-rose-600 disabled:bg-slate-200 disabled:text-slate-400 text-white px-4 py-3 rounded-xl font-bold shadow-sm transition">
+              🔥 苦手だけ (<span id="weak-cards-count">0</span>)
             </button>
             <button id="start-study-btn" type="button" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold shadow transition">
               ▶ 全問学習
             </button>
           </div>
+        </div>
+
+        <!-- 学習オプション共通バー（シャッフル & 表裏反転） -->
+        <div class="bg-indigo-50/60 border border-indigo-100 px-3.5 py-2.5 rounded-xl flex flex-wrap items-center gap-4 text-xs">
+          <span class="font-bold text-indigo-900">⚙️ 学習設定:</span>
+          <label class="inline-flex items-center gap-1.5 cursor-pointer select-none font-semibold text-slate-700">
+            <input type="checkbox" id="deck-opt-shuffle" class="rounded text-indigo-600 focus:ring-indigo-500">
+            <span>🔀 出題順をシャッフル</span>
+          </label>
+          <label class="inline-flex items-center gap-1.5 cursor-pointer select-none font-semibold text-slate-700">
+            <input type="checkbox" id="deck-opt-reverse" class="rounded text-indigo-600 focus:ring-indigo-500">
+            <span>⇄ 一問一答の表裏を反転</span>
+          </label>
         </div>
 
         <!-- 共有設定パネル（オーナーのみ表示） -->
@@ -461,6 +477,33 @@
             <button id="delete-folder-btn" type="button" class="text-xs bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold px-3 py-2 rounded-lg transition">フォルダを削除</button>
           </div>
         </div>
+
+        <!-- フォルダ横断学習アクションバー -->
+        <div class="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex flex-wrap items-center gap-4 text-xs">
+            <span class="font-bold text-amber-900">⚙️ 学習設定:</span>
+            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none font-semibold text-slate-700">
+              <input type="checkbox" id="folder-opt-shuffle" class="rounded text-amber-600 focus:ring-amber-500">
+              <span>🔀 シャッフル</span>
+            </label>
+            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none font-semibold text-slate-700">
+              <input type="checkbox" id="folder-opt-reverse" class="rounded text-amber-600 focus:ring-amber-500">
+              <span>⇄ 表裏反転</span>
+            </label>
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <button id="folder-start-starred-btn" type="button" disabled class="bg-amber-500 hover:bg-amber-600 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl shadow-sm transition">
+              ⭐ 星つきだけ (<span id="folder-starred-cards-count">0</span>)
+            </button>
+            <button id="folder-start-weak-btn" type="button" disabled class="bg-rose-500 hover:bg-rose-600 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl shadow-sm transition">
+              🔥 苦手だけ (<span id="folder-weak-cards-count">0</span>)
+            </button>
+            <button id="folder-start-all-btn" type="button" disabled class="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition">
+              ▶ フォルダ内すべて学習 (<span id="folder-total-cards-count">0</span>問)
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- フォルダにセットを追加するバー -->
@@ -489,9 +532,9 @@
   </main>
 
   <script>
-  window.addEventListener('error', (e) => alert('エラー: ' + e.message + '\n場所: ' + e.filename));
-  window.addEventListener('unhandledrejection', (e) => alert('非同期エラー: ' + e.reason));
-</script>
+    window.addEventListener('error', (e) => alert('エラー: ' + e.message + '\n場所: ' + e.filename));
+    window.addEventListener('unhandledrejection', (e) => alert('非同期エラー: ' + e.reason));
+  </script>
 
   <!-- スクリプト参照（ES Modules） -->
   <script type="module" src="js/main.js"></script>
