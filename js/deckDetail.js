@@ -6,6 +6,7 @@ import { getUserClasses } from './classes.js';
 import { startQuizSession } from './study.js';
 import { getUserFolders } from './folders.js';
 import { loadUserStarredCards, updateDeckStarCountUI } from './studyOptions.js';
+import { initImportExportEvents } from './importExport.js';
 
 export async function openDeck(deckId, autoStudyMode = null, skipPushState = false) {
   const { data: deck, error } = await supabaseClient.from('decks').select('*').eq('id', deckId).single();
@@ -53,12 +54,14 @@ export async function setupAndRenderDeck(deck, autoStudyMode = null, skipPushSta
   const sharedDeckBadge = document.getElementById('shared-deck-badge');
   const shareSettingsPanel = document.getElementById('share-settings-panel');
   const createCardContainer = document.getElementById('create-card-container');
+  const bulkImportOwnerBox = document.getElementById('bulk-import-owner-box');
 
   if (state.isDeckOwner) {
     editDeckMetaBtn.classList.remove('hidden');
     sharedDeckBadge.classList.add('hidden');
     shareSettingsPanel.classList.remove('hidden');
     createCardContainer.classList.remove('hidden');
+    if (bulkImportOwnerBox) bulkImportOwnerBox.classList.remove('hidden');
     document.getElementById('deck-visibility-select').value = deck.visibility || 'private';
     updateShareLinkBox(deck);
     await renderDeckClassShareToggles(deck.id);
@@ -67,6 +70,7 @@ export async function setupAndRenderDeck(deck, autoStudyMode = null, skipPushSta
     sharedDeckBadge.classList.remove('hidden');
     shareSettingsPanel.classList.add('hidden');
     createCardContainer.classList.add('hidden');
+    if (bulkImportOwnerBox) bulkImportOwnerBox.classList.add('hidden');
   }
 
   await checkAndRenderSaveButton(deck.id);
