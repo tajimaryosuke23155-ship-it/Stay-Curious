@@ -59,10 +59,9 @@ export async function loadSavedDecks() {
 
   const { data: rows, error } = await supabaseClient
     .from('saved_decks')
-    .select('deck_id, created_at, decks(*)')
-    .eq('user_id', state.currentUser.id)
-    .order('created_at', { ascending: false });
-
+    .select('deck_id, decks(*)')
+    .eq('user_id', state.currentUser.id);
+  
   if (error) {
     savedListEl.innerHTML = `<p class="text-rose-500 text-sm">読み込みエラー: ${escapeHtml(error.message)}</p>`;
     return;
