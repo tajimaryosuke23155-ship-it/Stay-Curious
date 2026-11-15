@@ -537,25 +537,6 @@
   </script>
 
   <!-- スクリプト参照（ES Modules） -->
-  <script type="module">
-  const files = [
-    './js/state.js',
-    './js/studyOptions.js',
-    './js/study.js',
-    './js/deckDetail.js',
-    './js/folders.js',
-    './js/main.js'
-  ];
-  (async () => {
-    for (const f of files) {
-      try {
-        await import(f);
-      } catch (e) {
-        alert('❌ 原因のファイル: ' + f + '\n理由: ' + e.message);
-        return;
-      }
-    }
-  })();
-</script>
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>
