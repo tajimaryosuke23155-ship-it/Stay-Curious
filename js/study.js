@@ -94,10 +94,10 @@ function undoLastFlashcard() {
   } else {
     state.studySessionStats.wrongCards.pop();
   }
+  state.lastUndoDirection = last.wasCorrect ? 'right' : 'left';
   state.currentStudyIndex = Math.max(0, state.currentStudyIndex - 1);
   renderCurrentQuestion();
 }
-
 export function renderCurrentQuestion() {
   cleanupFlashcardGestures();
 
@@ -199,6 +199,9 @@ export function renderCurrentQuestion() {
       renderCurrentQuestion();
     };
 
+    const undoDir = state.lastUndoDirection || null;
+    state.lastUndoDirection = null;
+
     const mountEl = document.getElementById('flashcard-gesture-mount');
     const gestureCtrl = mountInteractiveFlashcard(mountEl, {
       frontHtml: `
@@ -211,7 +214,8 @@ export function renderCurrentQuestion() {
       `,
       onKnow: handleKnow,
       onDontKnow: handleDontKnow,
-      onUndo: canUndo ? undoLastFlashcard : null
+      onUndo: canUndo ? undoLastFlashcard : null,
+      undoFromDirection: undoDir
     });
 
     // 下部のボタンからもスワイプアニメーション付きで判定できるように連動
